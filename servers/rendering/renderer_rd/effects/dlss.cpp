@@ -603,7 +603,7 @@ bool DLSSEffect::is_ready(DLSSContext *p_context) {
 	}
 	return true;
 }
-#else
+#elif !defined(NGX_ENABLED) // The NGX (Linux) implementation lives in dlss_ngx.cpp.
 DLSSEffect::DLSSEffect() {}
 DLSSEffect::~DLSSEffect() {}
 DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_size) {

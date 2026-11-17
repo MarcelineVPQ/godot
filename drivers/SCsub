@@ -74,6 +74,10 @@ SConscript("streamline/SCsub")
 # Aftermath
 SConscript("aftermath/SCsub")
 
+# NVIDIA NGX (DLSS Ray Reconstruction on Linux)
+if env["use_ngx"]:
+    SConscript("ngx/SCsub")
+
 env.add_source_files(env.drivers_sources, "*.cpp")
 
 lib = env.add_library("drivers", env.drivers_sources)

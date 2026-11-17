@@ -43,6 +43,10 @@
 #include "drivers/vulkan/rendering_device_driver_vulkan.h"
 #include "drivers/vulkan/vulkan_hooks.h"
 
+#ifdef NGX_ENABLED
+#include "drivers/ngx/ngx_context.h"
+#endif
+
 #ifndef DEV_ENABLED
 #include "core/os/os.h"
 #endif
@@ -468,6 +472,18 @@ Error RenderingContextDriverVulkan::_initialize_instance_extensions() {
 	if (want_debug_utils) {
 		_register_requested_instance_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME, false);
 	}
+
+#ifdef NGX_ENABLED
+	// DLSS Ray Reconstruction (NGX) needs these once the GPU turns out to be NVIDIA. The GPU is not
+	// known yet, so they are optional: only those the loader offers get enabled.
+	LocalVector<CharString> ngx_extensions;
+	NGXContext::get().get_vulkan_instance_extensions(ngx_extensions);
+	for (const CharString &extension_name : ngx_extensions) {
+		if (!requested_instance_extensions.has(extension_name)) {
+			_register_requested_instance_extension(extension_name, false);
+		}
+	}
+#endif
 
 	// Load instance extensions that are available.
 	uint32_t instance_extension_count = 0;

@@ -201,6 +201,7 @@ opts.Add(BoolVariable("metal", "Enable the Metal rendering driver on supported p
 opts.Add(BoolVariable("use_volk", "Use the volk library to load the Vulkan loader dynamically", True))
 opts.Add(BoolVariable("use_streamline", "Enable Streamline support", True))
 opts.Add(BoolVariable("use_aftermath", "Enable NVIDIA Nsight Aftermath GPU crash dump support", False))
+opts.Add(BoolVariable("use_ngx", "Enable DLSS Ray Reconstruction through the NVIDIA NGX SDK (Linux x86_64 Vulkan only)", True))
 opts.Add(BoolVariable("accesskit", "Enable the AccessKit driver for screen reader support", True))
 opts.Add(BoolVariable("angle", "Enable the ANGLE rendering driver for OpenGL ES 3.0 on supported platforms", True))
 opts.Add(BoolVariable("sdl", "Enable the SDL3 input driver", True))
@@ -632,6 +633,43 @@ if env["use_aftermath"]:
 
     if env["use_aftermath"]:
         env.AppendUnique(CPPDEFINES=["AFTERMATH_ENABLED"])
+
+if env["use_ngx"]:
+    # The NGX SDK (DLSS) is never committed: its licence does not allow it to be put under the engine's
+    # MIT licence. It is fetched at build time from a pinned NVIDIA/DLSS commit; see drivers/ngx/README.md.
+    if env["platform"] == "linuxbsd" and env["arch"] == "x86_64" and env["vulkan"]:
+        import shutil
+
+        from misc.utility.thirdparty_fetch import fetch_files
+
+        ngx_dlssd_library = "libnvidia-ngx-dlssd.so.310.9.16"
+        if fetch_files(
+            name="NVIDIA DLSS SDK v310.9.16",
+            base_url="https://raw.githubusercontent.com/NVIDIA/DLSS/9981c6350dc58c0ce21f024fd65e31e851c31689",
+            files=[
+                "LICENSE.txt",
+                "include/nvsdk_ngx_defs.h",
+                "include/nvsdk_ngx_defs_dlssd.h",
+                "include/nvsdk_ngx_defs_vk.h",
+                "include/nvsdk_ngx_helpers_dlssd_vk.h",
+                "include/nvsdk_ngx_helpers_vk.h",
+                "include/nvsdk_ngx_params.h",
+                "include/nvsdk_ngx_params_dlssd.h",
+                "include/nvsdk_ngx_vk.h",
+                "lib/Linux_x86_64/libnvsdk_ngx.a",
+                "lib/Linux_x86_64/rel/" + ngx_dlssd_library,
+            ],
+            dest_dir="thirdparty/ngx",
+        ):
+            env.AppendUnique(CPPDEFINES=["NGX_ENABLED"])
+            # NGX loads the Ray Reconstruction library at runtime from the executable's folder.
+            os.makedirs("bin", exist_ok=True)
+            if not os.path.isfile(os.path.join("bin", ngx_dlssd_library)):
+                shutil.copy2(os.path.join("thirdparty/ngx/lib/Linux_x86_64/rel", ngx_dlssd_library), "bin")
+        else:
+            env["use_ngx"] = False
+    else:
+        env["use_ngx"] = False
 
 # Library Support
 if env["library_type"] != "executable":

@@ -54,6 +54,9 @@
 #ifdef STREAMLINE_ENABLED
 #include "drivers/streamline/streamline_context.h"
 #endif
+#ifdef NGX_ENABLED
+#include "drivers/ngx/ngx_context.h"
+#endif
 
 // No RenderingDevice exists under the Compatibility renderer.
 static void _set_gpu_label_prefix(const String &p_prefix) {
@@ -283,6 +286,13 @@ void RendererViewport::_configure_3d_render_buffers(Viewport *p_viewport) {
 			if (scaling_3d_mode == RSE::VIEWPORT_SCALING_3D_MODE_DLSS) {
 				if (StreamlineContext::get().dlss_clamp_render_size(target_width, target_height, render_width, render_height)) {
 					WARN_PRINT_ONCE(vformat("DLSS does not support the requested 3D resolution scale. Clamping the internal resolution to %dx%d.", render_width, render_height));
+					scaling_3d_scale = (float)render_width / (float)target_width;
+				}
+			}
+#elif defined(NGX_ENABLED)
+			if (scaling_3d_mode == RSE::VIEWPORT_SCALING_3D_MODE_DLSS) {
+				if (NGXContext::get().dlssd_clamp_render_size(target_width, target_height, render_width, render_height)) {
+					WARN_PRINT_ONCE(vformat("DLSS Ray Reconstruction does not support the requested 3D resolution scale. Clamping the internal resolution to %dx%d.", render_width, render_height));
 					scaling_3d_scale = (float)render_width / (float)target_width;
 				}
 			}
@@ -1072,7 +1082,11 @@ void RendererViewport::viewport_set_scaling_3d_mode(RID p_viewport, RSE::Viewpor
 		return;
 	}
 	if (p_mode == RSE::VIEWPORT_SCALING_3D_MODE_DLSS) {
-#ifndef STREAMLINE_ENABLED
+#if defined(NGX_ENABLED) && !defined(STREAMLINE_ENABLED)
+		if (!NGXContext::get().is_dlssd_available()) {
+			ERR_PRINT_ONCE_ED("DLSS Ray Reconstruction is not available: " + NGXContext::get().get_unavailable_reason());
+		}
+#elif !defined(STREAMLINE_ENABLED)
 		ERR_PRINT_ONCE_ED("DLSS is not available because Streamline support was not compiled into the engine.");
 #else
 		if (StreamlineContext::get().slInit == nullptr) {

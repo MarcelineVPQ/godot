@@ -52,6 +52,9 @@
 #ifdef STREAMLINE_ENABLED
 #include "drivers/streamline/streamline_context.h"
 #endif
+#ifdef NGX_ENABLED
+#include "drivers/ngx/ngx_context.h"
+#endif
 
 #define FORCE_SEPARATE_PRESENT_QUEUE 0
 #define PRINT_FRAMEBUFFER_FORMAT 0
@@ -8794,6 +8797,8 @@ Error RenderingDevice::initialize(RenderingContextDriver *p_context, DisplayServ
 		String streamline_enabled = "";
 #ifdef STREAMLINE_ENABLED
 		streamline_enabled = (StreamlineContext::get().slInit != nullptr ? " - Streamline" : "");
+#elif defined(NGX_ENABLED)
+		streamline_enabled = (NGXContext::get().is_dlssd_available() ? " - DLSS Ray Reconstruction (NGX)" : "");
 #endif
 		Engine::get_singleton()->print_header(vformat("%s %s - %s%s - Using Device #%d: %s - %s", get_device_api_name(), get_device_api_version(), rendering_method, streamline_enabled, device_index, _get_device_vendor_name(device), device.name));
 	}

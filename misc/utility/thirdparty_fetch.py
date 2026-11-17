@@ -93,3 +93,63 @@ def fetch_zip(
     except Exception as e:
         print(f"ERROR: Failed to fetch {name}: {e}")
         return False
+
+
+def fetch_files(
+    name,
+    base_url,
+    files,
+    dest_dir,
+):
+    """
+    Ensure that `dest_dir` contains each of `files`, downloaded one by one from
+    `base_url` + "/" + path. Use this instead of fetch_zip when only a few files
+    of a large archive are needed.
+
+    name     - Human-readable SDK name used in log messages.
+    base_url - URL prefix, e.g. a raw file URL pinned to one commit.
+    files    - Paths relative to base_url; each is saved at the same relative
+               path inside dest_dir.
+    dest_dir - Local directory to save into.
+    """
+    stamp = os.path.join(dest_dir, _URL_STAMP)
+
+    cached_url = None
+    if os.path.isfile(stamp):
+        with open(stamp, "r") as f:
+            cached_url = f.read().strip()
+
+    if cached_url == base_url and all(os.path.isfile(os.path.join(dest_dir, rel)) for rel in files):
+        return True
+
+    if cached_url is not None and cached_url != base_url:
+        print(f"{name}: URL changed - clearing '{dest_dir}' and re-fetching.")
+    else:
+        print(f"{name}: not found. Downloading {len(files)} file(s) from:\n  {base_url}")
+    if os.path.isdir(dest_dir):
+        shutil.rmtree(dest_dir)
+
+    try:
+        # Download everything first, so a failed fetch never leaves a partial SDK behind.
+        contents = {}
+        for rel in files:
+            with urllib.request.urlopen(base_url + "/" + rel) as resp:
+                contents[rel] = resp.read()
+
+        for rel, data in contents.items():
+            dest = os.path.join(dest_dir, rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with open(dest, "wb") as dst:
+                dst.write(data)
+
+        with open(stamp, "w") as f:
+            f.write(base_url)
+
+        print(f"{name}: saved {len(files)} file(s) to '{dest_dir}'.")
+        return True
+
+    except Exception as e:
+        print(f"ERROR: Failed to fetch {name}: {e}")
+        if os.path.isdir(dest_dir):
+            shutil.rmtree(dest_dir)
+        return False

@@ -42,6 +42,10 @@
 #include "servers/rendering/shader_types.h"
 #include "servers/rendering/storage/environment_storage.h"
 
+#ifdef NGX_ENABLED
+#include "drivers/ngx/ngx_context.h"
+#endif
+
 using namespace RendererSceneRenderImplementation;
 
 static void _dump_failed_shader(const String &p_source, const String &p_label, const String &p_error = String()) {
@@ -705,6 +709,12 @@ RSE::PathtracingDenoiser SceneShaderRaytracing::get_effective_denoiser(RID p_env
 	if (is_debug_vis_mode(env_storage->environment_get_pathtracing_debug_mode(p_environment))) {
 		return RSE::PT_DENOISER_NONE;
 	}
+#ifdef NGX_ENABLED
+	if (env_storage->environment_get_pathtracing_denoiser(p_environment) == RSE::PT_DENOISER_DLSS_RAY_RECONSTRUCTION && !NGXContext::get().is_dlssd_available()) {
+		WARN_PRINT_ONCE("The path tracer runs without a denoiser because DLSS Ray Reconstruction is not available: " + NGXContext::get().get_unavailable_reason());
+		return RSE::PT_DENOISER_NONE;
+	}
+#endif
 	return env_storage->environment_get_pathtracing_denoiser(p_environment);
 }
 

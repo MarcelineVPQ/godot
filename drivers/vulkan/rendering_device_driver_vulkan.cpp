@@ -45,6 +45,10 @@
 
 #include "drivers/aftermath/aftermath.h"
 
+#ifdef NGX_ENABLED
+#include "drivers/ngx/ngx_context.h"
+#endif
+
 #if defined(SWAPPY_FRAME_PACING_ENABLED)
 #include "platform/android/java_godot_wrapper.h"
 #include "platform/android/os_android.h"
@@ -614,6 +618,19 @@ Error RenderingDeviceDriverVulkan::_initialize_device_extensions() {
 		_register_requested_device_extension(VK_NV_DEVICE_DIAGNOSTICS_CONFIG_EXTENSION_NAME, false);
 		_register_requested_device_extension(VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME, false);
 	}
+
+#ifdef NGX_ENABLED
+	// DLSS Ray Reconstruction (NGX) on NVIDIA GPUs.
+	if (context_device.vendor == RenderingContextDriver::Vendor::VENDOR_NVIDIA) {
+		LocalVector<CharString> ngx_extensions;
+		NGXContext::get().get_vulkan_device_extensions(context_driver->instance_get(), physical_device, ngx_extensions);
+		for (const CharString &extension_name : ngx_extensions) {
+			if (!requested_device_extensions.has(extension_name)) {
+				_register_requested_device_extension(extension_name, false);
+			}
+		}
+	}
+#endif
 
 #if defined(VK_TRACK_DEVICE_MEMORY)
 	if (Engine::get_singleton()->is_extra_gpu_memory_tracking_enabled()) {
@@ -2022,6 +2039,12 @@ Error RenderingDeviceDriverVulkan::initialize(uint32_t p_device_index, uint32_t 
 #if defined(STREAMLINE_ENABLED)
 	if (Streamline::get_singleton()) {
 		Streamline::get_singleton()->emit_marker(STREAMLINE_MARKER_AFTER_DEVICE_CREATION);
+	}
+#endif
+
+#ifdef NGX_ENABLED
+	if (context_device.vendor == RenderingContextDriver::Vendor::VENDOR_NVIDIA) {
+		NGXContext::get().initialize_vulkan(context_driver->instance_get(), physical_device, vk_device, (void *)vkGetInstanceProcAddr, (void *)context_driver->functions_get().GetDeviceProcAddr);
 	}
 #endif
 
@@ -8003,6 +8026,9 @@ RenderingDeviceDriverVulkan::~RenderingDeviceDriverVulkan() {
 	if (Streamline::get_singleton()) {
 		Streamline::get_singleton()->emit_marker(STREAMLINE_MARKER_BEFORE_DEVICE_DESTROY);
 	}
+#endif
+#ifdef NGX_ENABLED
+	NGXContext::get().shutdown_vulkan(vk_device);
 #endif
 	Aftermath::get_singleton()->emit_marker(AFTERMATH_MARKER_BEFORE_DEVICE_DESTROY);
 
