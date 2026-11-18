@@ -1,5 +1,18 @@
 # Godot Engine
 
+> **This fork:** Godot 4.8-dev with NVIDIA's path tracer and DLSS (branch `nvidia-pt-dlss`).
+>
+> **Install on Linux** (x86_64, a recent distro; built on Ubuntu 26.04):
+>
+> ```bash
+> mkdir -p ~/.local/opt/godot-nd && cd ~/.local/opt/godot-nd
+> curl -LO https://github.com/MarcelineVPQ/godot/releases/latest/download/godot-nd-linux-x86_64.zip
+> unzip -o godot-nd-linux-x86_64.zip && rm godot-nd-linux-x86_64.zip && chmod +x godot-nd
+> mkdir -p ~/.local/bin && ln -sf ~/.local/opt/godot-nd/godot-nd ~/.local/bin/godot-nd
+> ```
+>
+> Run `godot-nd` to open it. Run the same commands again to update to the newest build.
+
 <p align="center">
   <a href="https://godotengine.org">
     <img src="misc/logo/logo_outlined.svg" width="400" alt="Godot Engine logo">
