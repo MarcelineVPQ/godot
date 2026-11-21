@@ -234,6 +234,8 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 		}
 		if (context->feature == nullptr) {
 			context->quality[feature] = NGXContext::QUALITY_OFF; // Don't retry every frame; the error was printed once.
+			// is_ready() said this frame would be written, so it shows black rather than old contents.
+			NGXContext::get().clear_output(native_command_buffer, output);
 			return;
 		}
 		context->feature_kind = feature;
@@ -253,7 +255,9 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 		info.jitter_y = p_params.jitter.y;
 		info.frame_time_ms = p_params.delta_time * 1000.0f;
 		info.reset = p_params.reset_accumulation;
-		NGXContext::get().dlss_evaluate(native_command_buffer, context->feature, info);
+		if (!NGXContext::get().dlss_evaluate(native_command_buffer, context->feature, info)) {
+			NGXContext::get().clear_output(native_command_buffer, output);
+		}
 		return;
 	}
 
@@ -274,7 +278,9 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 	info.reset = p_params.reset_accumulation;
 	ngx_convert_matrix(Projection(p_params.cam_transform.affine_inverse()), info.world_to_view);
 	ngx_convert_matrix(p_params.cam_projection, info.view_to_clip);
-	NGXContext::get().dlssd_evaluate(native_command_buffer, context->feature, info);
+	if (!NGXContext::get().dlssd_evaluate(native_command_buffer, context->feature, info)) {
+		NGXContext::get().clear_output(native_command_buffer, output);
+	}
 }
 
 void RendererRD::DLSSEffect::_upscale_internal_graph_callback(RenderingDeviceDriver *p_driver, RDD::CommandBufferID p_command_buffer, void *p_userdata) {

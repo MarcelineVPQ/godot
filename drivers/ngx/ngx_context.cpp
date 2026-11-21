@@ -561,6 +561,15 @@ bool NGXContext::dlssd_evaluate(void *p_command_buffer, void *p_feature, const D
 	return true;
 }
 
+void NGXContext::clear_output(void *p_command_buffer, const Resource &p_output) {
+	VkClearColorValue color = {};
+	VkImageSubresourceRange range = {};
+	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	range.levelCount = 1;
+	range.layerCount = 1;
+	vkCmdClearColorImage((VkCommandBuffer)p_command_buffer, (VkImage)p_output.image, VK_IMAGE_LAYOUT_GENERAL, &color, 1, &range);
+}
+
 void NGXContext::feature_release(void *p_feature, uint64_t p_release_frame) {
 	if (p_feature == nullptr || device == nullptr) {
 		return; // Shutdown already released it.

@@ -145,6 +145,9 @@ public:
 	void *dlssd_create(void *p_command_buffer, const CreateInfo &p_info);
 	bool dlss_evaluate(void *p_command_buffer, void *p_feature, const DLSSEvaluateInfo &p_info);
 	bool dlssd_evaluate(void *p_command_buffer, void *p_feature, const DLSSDEvaluateInfo &p_info);
+	// Clears p_output (a color image in the general layout, usable as a transfer destination) to transparent black,
+	// for a frame that DLSS couldn't write.
+	void clear_output(void *p_command_buffer, const Resource &p_output);
 	// The GPU may still be using the feature, so it is released once p_release_frame has been reached.
 	void feature_release(void *p_feature, uint64_t p_release_frame);
 	// Called by the Vulkan driver at the start of every frame of p_device (a VkDevice).
