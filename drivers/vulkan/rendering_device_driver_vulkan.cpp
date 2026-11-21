@@ -7123,13 +7123,13 @@ RDD::RaytracingPipelineID RenderingDeviceDriverVulkan::_rt_get_or_build_hit_grou
 	lib_hit_group.intersection_shader_index = _remap(p_hit_group.intersection_shader_index);
 
 	// Unlocked: the (possibly slow) driver call shouldn't stall other threads' cache lookups. If
-	// another thread built the same key concurrently, we just lose the race below and this build
-	// becomes an unused, never-freed extra library — cheap and harmless, not a correctness issue.
+	// another thread built the same key concurrently, we lose the race below and free this build.
 	RaytracingPipelineID lib = _rt_pipeline_library_create(lib_shaders, VectorView<HitGroup>(lib_hit_group), p_max_trace_recursion_depth, p_layout_defining_shader);
 	if (lib) {
 		MutexLock lock(rt_hit_group_library_cache_mutex);
 		RaytracingPipelineID *existing = rt_hit_group_library_cache.getptr(key);
 		if (existing) {
+			raytracing_pipeline_free(lib);
 			return *existing;
 		}
 		rt_hit_group_library_cache[key] = lib;
@@ -8295,6 +8295,11 @@ RenderingDeviceDriverVulkan::~RenderingDeviceDriverVulkan() {
 		buffer_free(breadcrumb_buffer);
 	}
 #endif
+
+	// The pipelines linked from these libraries were freed with the rendering device.
+	for (const KeyValue<RTHitGroupLibraryKey, RaytracingPipelineID> &E : rt_hit_group_library_cache) {
+		raytracing_pipeline_free(E.value);
+	}
 
 	while (small_allocs_pools.size()) {
 		HashMap<uint32_t, VmaPool>::Iterator E = small_allocs_pools.begin();
