@@ -2275,6 +2275,10 @@ RDD::AccelerationStructureID RenderingDeviceDriverMetal::blas_create(VectorView<
 	ERR_FAIL_V_MSG(AccelerationStructureID(), "Ray tracing is not currently supported by the Metal driver.");
 }
 
+RDD::AccelerationStructureID RenderingDeviceDriverMetal::blas_create_from_clusters(BufferID p_vertex_buffer, BufferID p_index_buffer, VectorView<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) {
+	ERR_FAIL_V_MSG(AccelerationStructureID(), "Cluster acceleration structures are not supported by the Metal driver.");
+}
+
 RDD::AccelerationStructureID RenderingDeviceDriverMetal::tlas_create(uint32_t p_max_instance_count, BitField<AccelerationStructureFlagBits> p_flags) {
 	ERR_FAIL_V_MSG(AccelerationStructureID(), "Ray tracing is not currently supported by the Metal driver.");
 }

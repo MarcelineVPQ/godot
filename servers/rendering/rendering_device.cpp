@@ -495,6 +495,7 @@ RID RenderingDevice::blas_create(Span<AccelerationStructureGeometry> p_geometrie
 RID RenderingDevice::blas_create_from_clusters(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) {
 	ERR_FAIL_COND_V_MSG(!has_feature(SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE), RID(), "The current rendering device doesn't support cluster acceleration structures.");
 	ERR_FAIL_COND_V(p_clusters.is_empty(), RID());
+	ERR_FAIL_COND_V_MSG(p_flags & ~(ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT | ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT), RID(), "A BLAS built from clusters only takes the PREFER_FAST_TRACE and PREFER_FAST_BUILD flags.");
 
 	Buffer *vertex_buffer = storage_buffer_owner.get_or_null(p_vertex_buffer);
 	ERR_FAIL_NULL_V_MSG(vertex_buffer, RID(), "The vertex buffer must be a valid storage buffer.");

@@ -6670,13 +6670,16 @@ RDD::AccelerationStructureID RenderingDeviceDriverVulkan::blas_create_from_clust
 		const AccelerationStructureCluster &cluster = p_clusters[i];
 		ERR_FAIL_COND_V_MSG(cluster.triangle_count == 0 || cluster.triangle_count > caps.max_triangles_per_cluster || cluster.vertex_count > caps.max_vertices_per_cluster, AccelerationStructureID(),
 				vformat("Cluster %d has %d triangles and %d vertices; the device allows 1 to %d triangles and up to %d vertices.", i, cluster.triangle_count, cluster.vertex_count, caps.max_triangles_per_cluster, caps.max_vertices_per_cluster));
-		ERR_FAIL_COND_V_MSG(cluster.geometry_index >= caps.max_geometry_index, AccelerationStructureID(), vformat("Cluster geometry index %d is past the device limit of %d.", cluster.geometry_index, caps.max_geometry_index));
+		ERR_FAIL_COND_V_MSG(cluster.geometry_index > caps.max_geometry_index, AccelerationStructureID(), vformat("Cluster geometry index %d is past the device limit of %d.", cluster.geometry_index, caps.max_geometry_index));
 		max_triangles = MAX(max_triangles, cluster.triangle_count);
 		max_vertices = MAX(max_vertices, cluster.vertex_count);
 		max_geometry_index = MAX(max_geometry_index, cluster.geometry_index);
 		total_triangles += cluster.triangle_count;
 		total_vertices += cluster.vertex_count;
 	}
+
+	// Updates and compaction don't exist for cluster operations; RenderingDevice refuses them.
+	const VkBuildAccelerationStructureFlagsKHR cluster_flags = VkBuildAccelerationStructureFlagsKHR(p_flags) & (VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR);
 
 	ClusterBuild *build = memnew(ClusterBuild);
 	build->triangle_input.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_TRIANGLE_CLUSTER_INPUT_NV;
@@ -6692,7 +6695,7 @@ RDD::AccelerationStructureID RenderingDeviceDriverVulkan::blas_create_from_clust
 	clusters.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_COMMANDS_INFO_NV;
 	clusters.input.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV;
 	clusters.input.maxAccelerationStructureCount = cluster_count;
-	clusters.input.flags = p_flags;
+	clusters.input.flags = cluster_flags;
 	clusters.input.opType = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_NV;
 	clusters.input.opMode = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_IMPLICIT_DESTINATIONS_NV;
 	clusters.input.opInput.pTriangleClusters = &build->triangle_input;
@@ -6705,7 +6708,7 @@ RDD::AccelerationStructureID RenderingDeviceDriverVulkan::blas_create_from_clust
 	bottom_level.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_COMMANDS_INFO_NV;
 	bottom_level.input.sType = VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV;
 	bottom_level.input.maxAccelerationStructureCount = 1;
-	bottom_level.input.flags = p_flags;
+	bottom_level.input.flags = cluster_flags;
 	bottom_level.input.opType = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_CLUSTERS_BOTTOM_LEVEL_NV;
 	bottom_level.input.opMode = VK_CLUSTER_ACCELERATION_STRUCTURE_OP_MODE_EXPLICIT_DESTINATIONS_NV;
 	bottom_level.input.opInput.pClustersBottomLevel = &build->bottom_level_input;
@@ -6762,7 +6765,6 @@ RDD::AccelerationStructureID RenderingDeviceDriverVulkan::blas_create_from_clust
 		const AccelerationStructureCluster &cluster = p_clusters[i];
 		VkClusterAccelerationStructureBuildTriangleClusterInfoNV &info = infos[i];
 		info = {};
-		info.clusterID = cluster.geometry_index;
 		info.triangleCount = cluster.triangle_count;
 		info.vertexCount = cluster.vertex_count;
 		info.indexType = VK_CLUSTER_ACCELERATION_STRUCTURE_INDEX_FORMAT_8BIT_NV;
@@ -6972,12 +6974,17 @@ void RenderingDeviceDriverVulkan::command_build_blas(CommandBufferID p_cmd_buffe
 		build->bottom_level_commands.scratchData = scratch_address;
 		device_functions.CmdBuildClusterAccelerationStructureIndirectNV(command_buffer->vk_command_buffer, &build->cluster_commands);
 
-		// The BLAS build reads the clusters and their addresses, and reuses the scratch memory.
-		VkMemoryBarrier barrier = {};
-		barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-		barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-		vkCmdPipelineBarrier(command_buffer->vk_command_buffer, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+		// The BLAS build reads the clusters, in this acceleration structure's buffer, and their addresses, which it
+		// reads as indirect command data (through its build info). It also reuses the scratch memory.
+		MemoryAccessBarrier memory_barrier;
+		memory_barrier.src_access = BARRIER_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT;
+		memory_barrier.dst_access = BARRIER_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT | BARRIER_ACCESS_INDIRECT_COMMAND_READ_BIT;
+		AccelerationStructureBarrier clusters_barrier;
+		clusters_barrier.acceleration_structure = p_acceleration_structure;
+		clusters_barrier.src_access = BARRIER_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT;
+		clusters_barrier.dst_access = BARRIER_ACCESS_ACCELERATION_STRUCTURE_READ_BIT;
+		clusters_barrier.size = VK_WHOLE_SIZE;
+		command_pipeline_barrier(p_cmd_buffer, PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT, PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT, memory_barrier, {}, {}, clusters_barrier);
 
 		device_functions.CmdBuildClusterAccelerationStructureIndirectNV(command_buffer->vk_command_buffer, &build->bottom_level_commands);
 		return;

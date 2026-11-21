@@ -794,8 +794,8 @@ public:
 
 	virtual AccelerationStructureID blas_create(VectorView<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags) = 0;
 	// A BLAS over cluster acceleration structures, one per cluster. Its builds build the clusters too; it can't be
-	// refit. Only drivers with SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE implement it.
-	virtual AccelerationStructureID blas_create_from_clusters(BufferID p_vertex_buffer, BufferID p_index_buffer, VectorView<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) { return AccelerationStructureID(); }
+	// refit. Drivers without SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE fail with an error.
+	virtual AccelerationStructureID blas_create_from_clusters(BufferID p_vertex_buffer, BufferID p_index_buffer, VectorView<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) = 0;
 
 	struct AccelerationStructureInstance {
 		Transform3D transform;
