@@ -223,3 +223,10 @@ repos:
 #     - id: new-local-hook
 # To add external repo hooks, bring the indentation back to:
 # - repo: my-remote-hook
+
+      - id: shader-rd-variants
+        name: shader-rd-variants
+        language: python
+        entry: python misc/scripts/check_shader_rd_variants.py
+        pass_filenames: false
+        files: ^(servers/rendering/renderer_rd/|tests/servers/rendering/test_shader_rd_variants\.cpp)
