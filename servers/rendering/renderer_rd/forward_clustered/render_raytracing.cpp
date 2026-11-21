@@ -3597,7 +3597,7 @@ void RenderRaytracing::_prepare_tlas(RID &r_tlas, uint32_t &r_max_instances, con
 				// An instance without a BLAS and with mask 0, so the slot can't keep last frame's.
 				inst = RD::AccelerationStructureInstance();
 				inst.mask = 0;
-				ERR_PRINT("Too many path traced geometry entries for a TLAS custom index.");
+				ERR_PRINT_ONCE("Too many path traced geometry entries for a TLAS custom index; the instances past them aren't traced.");
 				continue;
 			}
 			if ((*p_geometries)[inst.id].flags & RT_GEOM_FLAG_CLUSTERS) {
