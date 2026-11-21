@@ -2636,11 +2636,28 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 		gpu.radius = cluster.radius;
 	}
 
+	// Shading reads the surface's vertex buffer, whose positions are 16 bits per axis over the surface's AABB when its
+	// attributes are compressed. The cluster positions get the same rounding, so the traced surface is the shaded one.
+	LocalVector<float> positions;
+	positions.resize(header.finest_vertex_count * 3);
+	memcpy(positions.ptr(), view.get_positions().ptr(), positions.size() * sizeof(float));
+	if (mesh_storage->mesh_surface_get_format(p_mesh_surface) & RSE::ARRAY_FLAG_COMPRESS_ATTRIBUTES) {
+		const AABB aabb = mesh_storage->mesh_surface_get_aabb(p_mesh_surface);
+		for (uint32_t v = 0; v < header.finest_vertex_count; v++) {
+			// The same steps as RenderingServer::_surface_set_data() and the shaders' decode.
+			const Vector3 unit = (Vector3(positions[v * 3 + 0], positions[v * 3 + 1], positions[v * 3 + 2]) - aabb.position) / aabb.size;
+			for (int axis = 0; axis < 3; axis++) {
+				const uint16_t quantized = (uint16_t)CLAMP(unit[axis] * 65535, 0, 65535);
+				positions[v * 3 + axis] = float(quantized) / 65535.0f * aabb.size[axis] + aabb.position[axis];
+			}
+		}
+	}
+
 	const BitField<RD::BufferCreationBits> input_bits = RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT;
 	const uint64_t triangle_bytes = (uint64_t(header.finest_triangle_count) * 3 + 3) & ~uint64_t(3);
 	const String key = itos(p_cache_key);
 	RTClusterBuffers &buffers = r_surf_data->cluster_buffers;
-	buffers.positions = rd->storage_buffer_create(header.finest_vertex_count * sizeof(float) * 3, Span<uint8_t>(reinterpret_cast<const uint8_t *>(view.get_positions().ptr()), uint64_t(header.finest_vertex_count) * sizeof(float) * 3), 0, input_bits);
+	buffers.positions = rd->storage_buffer_create(positions.size() * sizeof(float), Span<uint8_t>(reinterpret_cast<const uint8_t *>(positions.ptr()), positions.size() * sizeof(float)), 0, input_bits);
 	buffers.triangles = rd->storage_buffer_create(triangle_bytes, Span<uint8_t>(local_triangles.ptr(), triangle_bytes), 0, input_bits);
 	buffers.indices = rd->storage_buffer_create(indices.size() * sizeof(uint32_t), Span<uint8_t>(reinterpret_cast<const uint8_t *>(indices.ptr()), indices.size() * sizeof(uint32_t)), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
 	buffers.clusters = rd->storage_buffer_create(cluster_data.size() * sizeof(RTClusterData), Span<uint8_t>(reinterpret_cast<const uint8_t *>(cluster_data.ptr()), cluster_data.size() * sizeof(RTClusterData)), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
