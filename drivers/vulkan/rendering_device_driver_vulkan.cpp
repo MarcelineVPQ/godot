@@ -4467,23 +4467,28 @@ void RenderingDeviceDriverVulkan::framebuffer_free(FramebufferID p_framebuffer) 
 /**** SHADER ****/
 /****************/
 
-// re-spirv can't parse OpTypeForwardPointer, which glslang emits for every buffer reference type.
-// Such modules declare the PhysicalStorageBufferAddresses capability, and capabilities come first.
-static bool _spirv_uses_buffer_references(const PackedByteArray &p_spirv) {
+// False for modules using instructions re-spirv can't parse, which it would report on stderr before giving up:
+// buffer references (OpTypeForwardPointer, OpConvertUToPtr), ray queries and float atomics. Each comes with a
+// capability, and capabilities come first in a module. Teaching re-spirv these instructions means knowing which have
+// side effects its dead code removal must keep (ray query proceed, float atomics), so they are left to it upstream.
+static bool _spirv_respv_can_parse(const PackedByteArray &p_spirv) {
 	const uint32_t SPIRV_HEADER_WORDS = 5;
 	const uint32_t SPIRV_OP_CAPABILITY = 17;
+	const uint32_t SPIRV_CAPABILITY_RAY_QUERY = 4472;
 	const uint32_t SPIRV_CAPABILITY_PHYSICAL_STORAGE_BUFFER_ADDRESSES = 5347;
+	const uint32_t SPIRV_CAPABILITY_ATOMIC_FLOAT32_ADD = 6033;
 
 	const uint32_t *words = reinterpret_cast<const uint32_t *>(p_spirv.ptr());
 	const uint32_t word_count = p_spirv.size() / sizeof(uint32_t);
 	uint32_t i = SPIRV_HEADER_WORDS;
 	while (i + 1 < word_count && (words[i] & 0xFFFF) == SPIRV_OP_CAPABILITY) {
-		if (words[i + 1] == SPIRV_CAPABILITY_PHYSICAL_STORAGE_BUFFER_ADDRESSES) {
-			return true;
+		const uint32_t capability = words[i + 1];
+		if (capability == SPIRV_CAPABILITY_RAY_QUERY || capability == SPIRV_CAPABILITY_PHYSICAL_STORAGE_BUFFER_ADDRESSES || capability == SPIRV_CAPABILITY_ATOMIC_FLOAT32_ADD) {
+			return false;
 		}
 		i += MAX(words[i] >> 16, 1u);
 	}
-	return false;
+	return true;
 }
 
 static VkShaderStageFlagBits RD_STAGE_TO_VK_SHADER_STAGE_BITS[RDD::SHADER_STAGE_MAX] = {
@@ -4658,7 +4663,7 @@ RDD::ShaderID RenderingDeviceDriverVulkan::shader_create_from_container(const Re
 
 		shader_info.original_stage_size.push_back(decoded_spirv.size());
 
-		if (use_respv && _spirv_uses_buffer_references(decoded_spirv)) {
+		if (use_respv && !_spirv_respv_can_parse(decoded_spirv)) {
 			if (store_respv) {
 				shader_info.respv_stage_shaders.push_back(respv::Shader());
 			}
