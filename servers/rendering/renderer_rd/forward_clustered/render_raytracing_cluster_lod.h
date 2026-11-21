@@ -65,6 +65,8 @@ struct RTClusterLodSurface {
 	uint64_t cluster_addresses_address = 0;
 	uint64_t lods_address = 0;
 	uint32_t cluster_count = 0;
+	// The most clusters a cut can have; each instance's BLAS and references are sized for it.
+	uint32_t max_cut_cluster_count = 0;
 	uint32_t finest_triangle_count = 0;
 	// Bounds holding every cluster, in mesh space.
 	Vector3 center;
@@ -127,6 +129,7 @@ public:
 			uint64_t lods_address = 0;
 			uint64_t cluster_addresses_address = 0;
 			uint32_t cluster_count = 0;
+			uint32_t max_cut_cluster_count = 0;
 			Transform3D transform; // The instance's, which the cut is picked for.
 		};
 
@@ -187,7 +190,7 @@ private:
 		uint32_t flags;
 		uint32_t cluster_count;
 		uint32_t stats_slot;
-		uint32_t pad0;
+		uint32_t reference_capacity;
 		uint32_t pad1;
 		uint64_t lods;
 		uint64_t cluster_addresses;

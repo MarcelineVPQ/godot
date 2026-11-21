@@ -65,7 +65,7 @@ struct Job {
 	uint flags;
 	uint cluster_count;
 	uint stats_slot;
-	uint pad0;
+	uint reference_capacity; // References the buffer and the BLAS hold: the most clusters a cut can have.
 	uint pad1;
 	uint64_t lods;
 	uint64_t cluster_addresses;
@@ -129,7 +129,8 @@ void main() {
 			offset += s < gl_SubgroupID ? subgroup_counts[s] : 0u;
 			selected_count += subgroup_counts[s];
 		}
-		if (selected) {
+		// The capacity bounds every cut of a monotonic DAG; it only guards against rounding.
+		if (selected && offset < job.reference_capacity) {
 			references.v[offset] = cluster_addresses.v[cluster];
 		}
 		// The counts are rewritten by the next round.
@@ -147,7 +148,7 @@ void main() {
 			total_triangles += subgroup_counts[s];
 		}
 		ReferencesBuffer header = ReferencesBuffer(job.references);
-		header.count = selected_count;
+		header.count = min(selected_count, job.reference_capacity);
 		header.stride = 8u;
 		header.address = job.references + uint64_t(REFERENCES_OFFSET);
 		stats.v[job.stats_slot] = uvec2(selected_count, total_triangles);

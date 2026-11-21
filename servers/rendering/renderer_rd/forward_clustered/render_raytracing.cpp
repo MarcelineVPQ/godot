@@ -2647,6 +2647,20 @@ static bool _populate_cluster_lod(const MeshClusterData::View &p_view, Span<RD::
 		lod.radius = MAX(lod.radius, lod.center.distance_to(Vector3(group.center[0], group.center[1], group.center[2])) + group.radius);
 	}
 	lod.cluster_count = clusters.size();
+	// Coarsening a group swaps its clusters for those simplified from it, so a cut has the finest level's clusters plus
+	// what each coarsened group adds; simplification rarely gives a group more clusters than it had.
+	LocalVector<int32_t> growth;
+	growth.resize_initialized(groups.size());
+	for (const MeshClusterData::Cluster &cluster : clusters) {
+		growth[cluster.group]--;
+		if (cluster.refined >= 0) {
+			growth[cluster.refined]++;
+		}
+	}
+	lod.max_cut_cluster_count = p_view.get_header().finest_cluster_count;
+	for (int32_t added : growth) {
+		lod.max_cut_cluster_count += MAX(added, 0);
+	}
 	lod.finest_triangle_count = p_view.get_header().finest_triangle_count;
 
 	lod.lods = rd->storage_buffer_create(lods.size() * sizeof(RTClusterLod), Span<uint8_t>(reinterpret_cast<const uint8_t *>(lods.ptr()), lods.size() * sizeof(RTClusterLod)), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);

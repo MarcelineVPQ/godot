@@ -157,11 +157,11 @@ RID RTClusterLodSelector::instance_blas(View &r_view, const Key &p_key, const RT
 	}
 	if (!instance) {
 		View::Instance created;
-		const uint64_t references_size = RT_CLUSTER_LOD_REFERENCES_OFFSET + uint64_t(p_surface.cluster_count) * sizeof(uint64_t);
+		const uint64_t references_size = RT_CLUSTER_LOD_REFERENCES_OFFSET + uint64_t(p_surface.max_cut_cluster_count) * sizeof(uint64_t);
 		created.references = rd->storage_buffer_create(references_size, {}, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
 		ERR_FAIL_COND_V_MSG(created.references.is_null(), RID(), "Path tracing: Couldn't allocate the cluster references of a mesh instance; it isn't traced.");
 		rd->set_resource_name(created.references, "RT cluster LOD references");
-		created.blas = rd->blas_create_from_cluster_references(p_surface.cluster_set, created.references, 0, p_surface.cluster_count, RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT);
+		created.blas = rd->blas_create_from_cluster_references(p_surface.cluster_set, created.references, 0, p_surface.max_cut_cluster_count, RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT);
 		if (created.blas.is_null()) {
 			rd->free_rid(created.references);
 			ERR_FAIL_V_MSG(RID(), "Path tracing: Couldn't create the cluster BLAS of a mesh instance; it isn't traced.");
@@ -190,6 +190,7 @@ RID RTClusterLodSelector::instance_blas(View &r_view, const Key &p_key, const RT
 		candidate.lods_address = p_surface.lods_address;
 		candidate.cluster_addresses_address = p_surface.cluster_addresses_address;
 		candidate.cluster_count = p_surface.cluster_count;
+		candidate.max_cut_cluster_count = p_surface.max_cut_cluster_count;
 		candidate.transform = p_transform;
 		r_view.candidates.push_back(candidate);
 	}
@@ -299,6 +300,7 @@ void RTClusterLodSelector::end_view(View &r_view, LocalVector<RID> &r_dirty_blas
 			job.z_near = r_view.z_near;
 			job.flags = r_view.orthographic ? JOB_FLAG_ORTHOGRAPHIC : 0u;
 			job.cluster_count = candidate.cluster_count;
+			job.reference_capacity = candidate.max_cut_cluster_count;
 			job.stats_slot = instance.stats_slot;
 			job.lods = candidate.lods_address;
 			job.cluster_addresses = candidate.cluster_addresses_address;
