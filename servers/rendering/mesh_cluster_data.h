@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/math/math_funcs.h"
 #include "core/templates/span.h"
 #include "core/templates/vector.h"
 
@@ -47,6 +48,8 @@
 // Clusters in one group were simplified together into the clusters of the next level, whose `refined` is that group.
 // The bake keeps the DAG monotonic: a group's error is at least the error of every cluster in it, so for any error
 // threshold exactly one cut exists (draw a cluster when its own error is within the threshold and its group's is not).
+// A group's sphere also holds the spheres of its clusters (see cluster_sphere_reach()), so the cut stays exact when the
+// threshold applies to the error projected from a distance to the camera.
 namespace MeshClusterData {
 
 static constexpr uint32_t MAGIC = 0x534c4347; // "GCLS".
@@ -92,6 +95,15 @@ struct Cluster {
 };
 
 static_assert(sizeof(Header) == 40 && sizeof(Group) == 24 && sizeof(Cluster) == 48);
+
+// How far from p_group's center the sphere of p_cluster reaches. The bake makes each group's radius at least this for
+// every cluster in it.
+inline float cluster_sphere_reach(const Group &p_group, const Cluster &p_cluster) {
+	const float dx = p_cluster.center[0] - p_group.center[0];
+	const float dy = p_cluster.center[1] - p_group.center[1];
+	const float dz = p_cluster.center[2] - p_group.center[2];
+	return Math::sqrt(dx * dx + dy * dy + dz * dz) + p_cluster.radius;
+}
 
 // Read-only view of baked data; is_valid() is false when the data is empty or malformed. Every record of valid data has
 // been checked against the header, so readers may index with it directly. Surface vertex indices (`vertices`) can only

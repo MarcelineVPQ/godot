@@ -151,15 +151,21 @@ TEST_CASE("[SceneTree][MeshClusterData] Bake and read back") {
 	}
 }
 
-TEST_CASE("[SceneTree][MeshClusterData] Group errors bound their clusters' errors") {
+TEST_CASE("[SceneTree][MeshClusterData] Groups bound their clusters' errors and spheres") {
 	REQUIRE_MESSAGE(SurfaceTool::build_clusters_func != nullptr, "The meshoptimizer module bakes clusters.");
 	const Vector<uint8_t> data = bake(make_grid(64));
 	const MeshClusterData::View view(data);
 	REQUIRE(view.is_valid());
 	const Span<MeshClusterData::Group> groups = view.get_groups();
+	int larger_error = 0;
+	int outside = 0;
 	for (const MeshClusterData::Cluster &cluster : view.get_clusters()) {
-		CHECK(groups[cluster.group].error >= cluster.error);
+		const MeshClusterData::Group &group = groups[cluster.group];
+		larger_error += !(group.error >= cluster.error);
+		outside += !(MeshClusterData::cluster_sphere_reach(group, cluster) <= group.radius);
 	}
+	CHECK_MESSAGE(larger_error == 0, vformat("Clusters with a larger error than their group: %d.", larger_error));
+	CHECK_MESSAGE(outside == 0, vformat("Clusters whose sphere reaches outside their group's: %d.", outside));
 }
 
 // Number of triangles of the cut at p_threshold that contain (p_x, p_y) seen from above.

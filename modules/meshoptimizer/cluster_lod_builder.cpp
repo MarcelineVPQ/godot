@@ -96,8 +96,10 @@ Vector<uint8_t> cluster_lod_build(const float *p_positions, const float *p_attri
 				memcpy(cluster.center, source.bounds.center, sizeof(cluster.center));
 				cluster.radius = source.bounds.radius;
 			}
-			// Monotonic DAG: a group's error never falls below the error of the clusters it replaces.
+			// Monotonic DAG: a group's error never falls below the error of the clusters it replaces, and its sphere
+			// holds theirs, so a cut that depends on the distance to the camera stays free of cracks too.
 			group.error = MAX(group.error, cluster.error);
+			group.radius = MAX(group.radius, cluster_sphere_reach(group, cluster));
 
 			triangles.resize(triangles.size() + source.index_count);
 			vertices.resize(vertices.size() + source.index_count);
