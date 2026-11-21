@@ -32,6 +32,7 @@
 
 #include "core/math/transform_3d.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/rid.h"
 #include "core/variant/array.h"
@@ -164,7 +165,8 @@ public:
 
 	// Takes the camera of p_render_data for the cuts of this frame.
 	void begin_view(View &r_view, const RenderDataRD *p_render_data);
-	// The BLAS to trace the surface with for instance p_key at p_transform; invalid when it can't be made.
+	// The BLAS to trace the surface with for instance p_key at p_transform; invalid when it can't be made or the
+	// surface's cluster set failed to build.
 	RID instance_blas(View &r_view, const Key &p_key, const RTClusterLodSurface &p_surface, const Transform3D &p_transform);
 	// Picks this frame's cuts on the GPU and queues the BLASes over them in r_dirty_blas_list. Call after every
 	// instance_blas() of the view and before the BLASes are built. Adds the view's counters to r_render_info, the
@@ -199,6 +201,8 @@ private:
 	RID shader_version;
 	RID pipeline;
 	LocalVector<RID> pending_cluster_sets;
+	// Cluster sets whose build failed: their cluster addresses were never written, so no cut is picked from them.
+	HashSet<RID> failed_cluster_sets;
 	LocalVector<Job> jobs;
 
 	static void _scale_range(const Basis &p_basis, float &r_min, float &r_max);

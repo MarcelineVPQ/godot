@@ -136,6 +136,9 @@ float RTClusterLodSelector::_staleness(const View &p_view, const View::Instance 
 
 RID RTClusterLodSelector::instance_blas(View &r_view, const Key &p_key, const RTClusterLodSurface &p_surface, const Transform3D &p_transform) {
 	ERR_FAIL_COND_V(!r_view.active, RID());
+	if (failed_cluster_sets.has(p_surface.cluster_set)) {
+		return RID();
+	}
 	RD *rd = RD::get_singleton();
 	View::Instance *instance = r_view.instances.getptr(p_key);
 	if (instance && instance->cluster_set != p_surface.cluster_set) {
@@ -198,7 +201,14 @@ void RTClusterLodSelector::_build_pending_cluster_sets() {
 	if (builds.is_empty()) {
 		return;
 	}
-	ERR_FAIL_COND_MSG(rd->acceleration_structure_build_batch(builds, {}, {}) != OK, "Path tracing: Couldn't build the clusters of a mesh surface.");
+	// The batch skips a set it can't build, after an error, and builds the others.
+	rd->acceleration_structure_build_batch(builds, {}, {});
+	for (const RID &cluster_set : builds) {
+		if (!rd->acceleration_structure_is_built(cluster_set)) {
+			failed_cluster_sets.insert(cluster_set);
+			ERR_PRINT("Path tracing: Couldn't build the clusters of a mesh surface (see the error above); its instances aren't traced.");
+		}
+	}
 	// The selection reads the cluster addresses these builds write.
 	rd->untracked_barrier();
 }
@@ -229,6 +239,17 @@ void RTClusterLodSelector::end_view(View &r_view, LocalVector<RID> &r_dirty_blas
 		return;
 	}
 	_build_pending_cluster_sets();
+	if (!failed_cluster_sets.is_empty()) {
+		// No cut can be picked from a set that wasn't built. These instances were added to this frame's TLAS before the
+		// build, whose validation reports their unbuilt BLASes; from the next frame on, instance_blas() leaves them out.
+		for (uint32_t i = 0; i < r_view.candidates.size();) {
+			if (failed_cluster_sets.has(r_view.candidates[i].instance->cluster_set)) {
+				r_view.candidates.remove_at_unordered(i);
+			} else {
+				i++;
+			}
+		}
+	}
 
 	// Instances without a cut first, then the stalest, up to the budget.
 	struct StalestFirst {

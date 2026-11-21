@@ -1476,6 +1476,8 @@ public:
 	RID blas_create_from_cluster_references(RID p_cluster_set, RID p_references_buffer, uint64_t p_references_offset, uint32_t p_max_cluster_count, BitField<AccelerationStructureFlagBits> p_flags);
 	RID tlas_create(uint32_t p_max_instance_count, BitField<AccelerationStructureFlagBits> p_flags);
 	bool acceleration_structure_is_valid(RID p_acceleration_structure);
+	// False until a build of p_acceleration_structure has been recorded, and again once something invalidates it.
+	bool acceleration_structure_is_built(RID p_acceleration_structure);
 
 	typedef int64_t HitShaderBindingTableRange;
 

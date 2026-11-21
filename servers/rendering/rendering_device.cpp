@@ -659,6 +659,12 @@ bool RenderingDevice::acceleration_structure_is_valid(RID p_acceleration_structu
 	return acceleration_structure_owner.owns(p_acceleration_structure);
 }
 
+bool RenderingDevice::acceleration_structure_is_built(RID p_acceleration_structure) {
+	const AccelerationStructure *acceleration_structure = acceleration_structure_owner.get_or_null(p_acceleration_structure);
+	ERR_FAIL_NULL_V(acceleration_structure, false);
+	return !acceleration_structure->invalidated;
+}
+
 static constexpr const char *ACCELERATION_STRUCTURE_BUILD_IN_LIST_ERROR = "Acceleration structures can't be built while a draw, compute or raytracing list is being created.";
 
 Error RenderingDevice::blas_build(RID p_blas) {
