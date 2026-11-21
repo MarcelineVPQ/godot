@@ -348,14 +348,16 @@ void RTClusterLodSelector::_receive_stats(const PackedByteArray &p_data, Array p
 }
 
 void RTClusterLodSelector::_record_render_info(View &r_view, int *r_render_info) {
-	if (r_view.stats_buffer.is_valid()) {
+	// A small buffer, but read back only every so often: the render info is there for people to read.
+	if (r_view.stats_buffer.is_valid() && r_view.frame % STATS_READBACK_FRAMES == 0) {
 		if (r_view.stats_readback.is_empty()) {
 			r_view.stats_readback.push_back(PackedByteArray());
 		}
 		RD::get_singleton()->buffer_get_data_async(r_view.stats_buffer, callable_mp_static(&RTClusterLodSelector::_receive_stats).bind(r_view.stats_readback), 0, r_view.stats_capacity * sizeof(uint32_t) * 2);
 	}
 
-	// Counts of the last readback; an instance picked since shows its previous cut until the next one lands.
+	// Counts of the last readback, up to STATS_READBACK_FRAMES old; an instance picked since shows its previous cut until
+	// the next one lands.
 	const PackedByteArray counts = r_view.stats_readback.is_empty() ? PackedByteArray() : PackedByteArray(r_view.stats_readback[0]);
 	const uint32_t *slots = reinterpret_cast<const uint32_t *>(counts.ptr());
 	const uint32_t slot_count = counts.size() / (sizeof(uint32_t) * 2);

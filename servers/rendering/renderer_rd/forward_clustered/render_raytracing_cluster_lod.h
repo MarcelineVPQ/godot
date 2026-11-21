@@ -90,6 +90,8 @@ public:
 	static constexpr float HYSTERESIS = 0.1f;
 	// Frames an instance keeps its BLAS while it isn't traced.
 	static constexpr uint32_t EVICT_FRAMES = 60;
+	// Frames between readbacks of the cut sizes for the render info.
+	static constexpr uint32_t STATS_READBACK_FRAMES = 30;
 
 	// One traced instance of a surface: the geometry instance or MultiMesh, and the surface or MultiMesh instance.
 	struct Key {
