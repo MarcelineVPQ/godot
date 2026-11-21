@@ -58,6 +58,9 @@ if env["use_ngx"]:
     env.Install("#bin", env.ngx_libraries)
     env.InstallAs("#bin/NVIDIA_RTX_SDK_LICENSE.txt", env.ngx_license)
     env.Command(prog[0].abspath + ".ngx", [], env.Run(write_ngx_marker))
+else:
+    # A marker left by an earlier build with NGX would make the export ship the DLSS libraries with this binary.
+    env.AddPostAction(prog, Delete(prog[0].abspath + ".ngx"))
 
 if env["debug_symbols"] and env["separate_debug_symbols"]:
     env.AddPostAction(prog, env.Run(platform_linuxbsd_builders.make_debug_linuxbsd))
