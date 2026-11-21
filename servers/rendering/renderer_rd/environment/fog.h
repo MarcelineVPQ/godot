@@ -40,6 +40,7 @@
 #include "servers/rendering/storage/utilities.h"
 
 #define RB_SCOPE_FOG SNAME("Fog")
+#define RB_SCOPE_FOG_WORLD_GRID SNAME("FogWorldGrid")
 
 class ClusterBuilderRD;
 class RenderSceneBuffersRD;
@@ -52,6 +53,7 @@ private:
 
 	static int _get_fog_shader_group();
 	static int _get_fog_variant();
+	static int _get_fog_world_grid_variant();
 	static int _get_fog_process_variant(int p_idx);
 
 	/* FOG VOLUMES */
@@ -107,6 +109,15 @@ private:
 			float transform[16];
 		};
 
+		// Same layout as SceneParams in volumetric_fog.glsl with MODE_WORLD_GRID.
+		struct WorldGridUBO {
+			float grid_origin[3];
+			float voxel_size;
+
+			int32_t fog_volume_size[3];
+			float time;
+		};
+
 		struct VolumeUBO {
 			float fog_frustum_size_begin[2];
 			float fog_frustum_size_end[2];
@@ -131,10 +142,13 @@ private:
 		ShaderCompiler compiler;
 		VolumetricFogShaderRD shader;
 		RID volume_ubo;
+		RID world_grid_ubo;
 
 		RID default_shader;
 		RID default_material;
 		RID default_shader_rd;
+		RID default_world_grid_shader_rd; // Set when the world grid group is first enabled.
+		RID world_grid_empty_map; // 1x1x1 zero R32_UINT, bound when there is no world grid.
 
 		RID base_uniform_set;
 
@@ -207,6 +221,7 @@ private:
 		RID version;
 
 		PipelineDeferredRD pipeline;
+		PipelineDeferredRD world_grid_pipeline; // Created on first use.
 		Vector<ShaderCompiler::GeneratedCode::Texture> texture_uniforms;
 
 		Vector<uint32_t> ubo_offsets;
@@ -351,6 +366,29 @@ public:
 		~VolumetricFog();
 	};
 
+	// World-aligned medium grid around the camera for the path tracer, filled from the same fog volume shaders
+	// as the froxels. Each map holds the froxel pass's packed atomics: density, scattering and emission.
+	class VolumetricFogWorldGrid : public RenderBufferCustomDataRD {
+		GDCLASS(VolumetricFogWorldGrid, RenderBufferCustomDataRD)
+
+	public:
+		Vector3i size;
+		float voxel_size = 0.0;
+		Vector3 origin;
+
+		RID density_map;
+		RID light_map;
+		RID emissive_map;
+
+		RID uniform_set;
+
+		virtual void configure(RenderSceneBuffersRD *p_render_buffers) override {}
+		virtual void free_data() override {}
+
+		void init(const Vector3i &p_size);
+		~VolumetricFogWorldGrid();
+	};
+
 	void init_fog_shader(uint32_t p_max_directional_lights, int p_roughness_layers, bool p_is_using_radiance_octmap_array);
 	void free_fog_shader();
 
@@ -361,6 +399,13 @@ public:
 
 	/// Fog to sample this frame. Null when p_environment disables it, even if p_render_buffers still keeps its froxels.
 	static Ref<VolumetricFog> get_active(RenderSceneBuffersRD *p_render_buffers, RID p_environment);
+
+	/// World grid to sample this frame, null when p_environment disables volumetric fog.
+	static Ref<VolumetricFogWorldGrid> get_active_world_grid(RenderSceneBuffersRD *p_render_buffers, RID p_environment);
+	RID get_world_grid_empty_map() const { return volumetric_fog.world_grid_empty_map; }
+
+	/// Fills the world grid of p_render_buffers (creating it if needed) around p_cam_transform from the fog volumes.
+	void volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffers, const Transform3D &p_cam_transform, double p_time, const PagedArray<RID> &p_fog_volumes);
 
 	// Replaces shadow map lookups of the density pass with ray queries, set 1 and 2 are owned by the caller. The caller
 	// also orders the buffers read through device addresses, which the draw graph can't see.

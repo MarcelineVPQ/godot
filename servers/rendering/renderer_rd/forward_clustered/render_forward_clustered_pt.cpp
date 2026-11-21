@@ -862,6 +862,8 @@ void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_
 
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
 
+	RendererRD::Fog::get_singleton()->volumetric_fog_world_grid_update(rb.ptr(), p_render_data->scene_data->cam_transform, time, *p_render_data->fog_volumes);
+
 	// Shadow maps aren't rendered when path tracing, so there is no raster fallback.
 	RendererRD::Fog::VolumetricFogRayQueryShadows ray_query_shadows;
 	if (!fog_shadows->prepare(raytracing, p_rt_state, p_render_data, ray_query_shadows)) {

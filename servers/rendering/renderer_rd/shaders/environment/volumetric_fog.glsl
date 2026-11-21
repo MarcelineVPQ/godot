@@ -46,6 +46,17 @@ layout(set = 1, binding = 1) volatile buffer emissive_only_map_buffer {
 layout(r32ui, set = 1, binding = 1) uniform volatile uimage3D emissive_only_map;
 #endif
 
+#ifdef MODE_WORLD_GRID
+// World-aligned grid around the camera, sampled by the path tracer.
+layout(set = 1, binding = 2, std140) uniform SceneParams {
+	vec3 grid_origin;
+	float voxel_size;
+
+	ivec3 fog_volume_size;
+	float time;
+}
+scene_params;
+#else
 layout(set = 1, binding = 2, std140) uniform SceneParams {
 	vec2 fog_frustum_size_begin;
 	vec2 fog_frustum_size_end;
@@ -67,6 +78,7 @@ layout(set = 1, binding = 2, std140) uniform SceneParams {
 	mat4 transform;
 }
 scene_params;
+#endif
 
 #ifdef NO_IMAGE_ATOMICS
 layout(set = 1, binding = 3) volatile buffer density_only_map_buffer {
@@ -90,11 +102,13 @@ layout(set = 2, binding = 0, std140) uniform MaterialUniforms {
 
 #GLOBALS
 
+#ifndef MODE_WORLD_GRID
 float get_depth_at_pos(float cell_depth_size, int z) {
 	float d = float(z) * cell_depth_size + cell_depth_size * 0.5; //center of voxels
 	d = pow(d, scene_params.detail_spread);
 	return scene_params.fog_frustum_end * d;
 }
+#endif
 
 #define TEMPORAL_FRAMES 16
 
@@ -117,8 +131,6 @@ const vec3 halton_map[TEMPORAL_FRAMES] = vec3[](
 		vec3(0.03125, 0.59259259, 0.32));
 
 void main() {
-	vec3 fog_cell_size = 1.0 / vec3(scene_params.fog_volume_size);
-
 	ivec3 pos = ivec3(gl_GlobalInvocationID.xyz) + params.corner;
 	if (any(greaterThanEqual(pos, scene_params.fog_volume_size))) {
 		return; //do not compute
@@ -128,6 +140,16 @@ void main() {
 #endif
 
 	vec3 posf = vec3(pos);
+
+	float density = 0.0;
+	vec3 emission = vec3(0.0);
+	vec3 albedo = vec3(0.0);
+
+#ifdef MODE_WORLD_GRID
+	vec3 uvw = (posf + 0.5) / vec3(scene_params.fog_volume_size);
+	vec4 world = vec4(scene_params.grid_origin + (posf + 0.5) * scene_params.voxel_size, 1.0);
+#else
+	vec3 fog_cell_size = 1.0 / vec3(scene_params.fog_volume_size);
 
 	vec3 fog_unit_pos = posf * fog_cell_size + fog_cell_size * 0.5; //center of voxels
 	fog_unit_pos.z = pow(fog_unit_pos.z, scene_params.detail_spread);
@@ -163,16 +185,13 @@ void main() {
 		}
 	}
 
-	float density = 0.0;
-	vec3 emission = vec3(0.0);
-	vec3 albedo = vec3(0.0);
-
 	float cell_depth_size = abs(view_pos.z - get_depth_at_pos(fog_cell_size.z, pos.z + 1));
 
 	vec4 world = scene_params.transform * vec4(view_pos, 1.0);
 	world.xyz /= world.w;
 
 	vec3 uvw = fog_unit_pos;
+#endif
 
 	vec4 local_pos = params.transform * world;
 	local_pos.xyz /= local_pos.w;

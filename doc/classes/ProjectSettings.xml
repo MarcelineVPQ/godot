@@ -3358,6 +3358,14 @@
 			If [code]true[/code], volumetric fog traces ray query shadows for shadowed lights when path tracing. If [code]false[/code], those lights scatter into the fog unoccluded, which is faster and useful to check whether geometry is blocking the fog lighting.
 			[b]Note:[/b] Only has an effect when path tracing and [member Environment.volumetric_fog_enabled] are enabled on the active [Environment].
 		</member>
+		<member name="rendering/pathtracing/volumetric_fog_world_grid_size" type="Vector3" setter="" getter="" default="Vector3(48, 24, 48)">
+			Size in meters of the world-aligned grid around the camera that [FogVolume]s are rendered into for the path tracer. Unlike the volumetric fog froxels, which follow the camera frustum, every ray can sample this grid. It moves with the camera in whole voxels. See [member rendering/pathtracing/volumetric_fog_world_grid_voxel_size].
+			The grid keeps three 32-bit values per voxel: the default size and voxel size use about 42 MB of video memory.
+			[b]Note:[/b] Only has an effect when path tracing and [member Environment.volumetric_fog_enabled] are enabled on the active [Environment]. Use [constant Environment.RT_DEBUG_VOLUMETRIC_FOG_WORLD_GRID] to see it.
+		</member>
+		<member name="rendering/pathtracing/volumetric_fog_world_grid_voxel_size" type="float" setter="" getter="" default="0.25">
+			Size in meters of one voxel of the path tracer's [FogVolume] grid (see [member rendering/pathtracing/volumetric_fog_world_grid_size]). Smaller voxels show finer detail but use memory with the cube of the voxel count.
+		</member>
 		<member name="rendering/reflections/reflection_atlas/reflection_count" type="int" setter="" getter="" default="64">
 			Number of cubemaps to store in the reflection atlas. The number of [ReflectionProbe]s in a scene will be limited by this amount. A higher number requires more VRAM.
 		</member>

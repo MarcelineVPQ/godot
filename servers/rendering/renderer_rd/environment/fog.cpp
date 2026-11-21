@@ -30,6 +30,7 @@
 
 #include "fog.h"
 
+#include "core/config/project_settings.h"
 #include "servers/rendering/renderer_rd/cluster_builder_rd.h"
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
@@ -64,6 +65,11 @@ int Fog::_get_fog_variant() {
 	bool use_32_bit_atomics = rd->has_feature(RD::SUPPORTS_IMAGE_ATOMIC_32_BIT);
 	bool use_vulkan_memory_model = rd->has_feature(RD::SUPPORTS_VULKAN_MEMORY_MODEL);
 	return (use_vulkan_memory_model ? 2 : 0) + (use_32_bit_atomics ? 0 : 1);
+}
+
+// World grid variants follow the froxel variants in the same order, one group each.
+int Fog::_get_fog_world_grid_variant() {
+	return VolumetricFogShader::SHADER_GROUP_MAX + _get_fog_variant();
 }
 
 int Fog::_get_fog_process_variant(int p_idx) {
@@ -218,11 +224,20 @@ void Fog::init_fog_shader(uint32_t p_max_directional_lights, int p_roughness_lay
 	{
 		String defines = "#define SAMPLERS_BINDING_FIRST_INDEX " + itos(SAMPLERS_BINDING_FIRST_INDEX) + "\n";
 		// Initialize local fog shader
+		const char *group_defines[VolumetricFogShader::SHADER_GROUP_MAX] = {
+			"",
+			"#define NO_IMAGE_ATOMICS\n",
+			"#define USE_VULKAN_MEMORY_MODEL\n",
+			"#define USE_VULKAN_MEMORY_MODEL\n#define NO_IMAGE_ATOMICS\n",
+		};
 		Vector<ShaderRD::VariantDefine> volumetric_fog_modes;
-		volumetric_fog_modes.push_back(ShaderRD::VariantDefine(VolumetricFogShader::SHADER_GROUP_BASE, "", false));
-		volumetric_fog_modes.push_back(ShaderRD::VariantDefine(VolumetricFogShader::SHADER_GROUP_NO_ATOMICS, "#define NO_IMAGE_ATOMICS\n", false));
-		volumetric_fog_modes.push_back(ShaderRD::VariantDefine(VolumetricFogShader::SHADER_GROUP_VULKAN_MEMORY_MODEL, "#define USE_VULKAN_MEMORY_MODEL\n", false));
-		volumetric_fog_modes.push_back(ShaderRD::VariantDefine(VolumetricFogShader::SHADER_GROUP_VULKAN_MEMORY_MODEL_NO_ATOMICS, "#define USE_VULKAN_MEMORY_MODEL\n#define NO_IMAGE_ATOMICS\n", false));
+		for (int i = 0; i < VolumetricFogShader::SHADER_GROUP_MAX; i++) {
+			volumetric_fog_modes.push_back(ShaderRD::VariantDefine(i, group_defines[i], false));
+		}
+		// The path tracer's world grid. Its groups are enabled on first use, so raster never compiles them.
+		for (int i = 0; i < VolumetricFogShader::SHADER_GROUP_MAX; i++) {
+			volumetric_fog_modes.push_back(ShaderRD::VariantDefine(VolumetricFogShader::SHADER_GROUP_MAX + i, String(group_defines[i]) + "#define MODE_WORLD_GRID\n", false));
+		}
 
 		volumetric_fog.shader.initialize(volumetric_fog_modes, defines);
 		volumetric_fog.shader.enable_group(_get_fog_shader_group());
@@ -230,6 +245,16 @@ void Fog::init_fog_shader(uint32_t p_max_directional_lights, int p_roughness_lay
 		material_storage->shader_set_data_request_function(RendererRD::MaterialStorage::SHADER_TYPE_FOG, _create_fog_shader_funcs);
 		material_storage->material_set_data_request_function(RendererRD::MaterialStorage::SHADER_TYPE_FOG, _create_fog_material_funcs);
 		volumetric_fog.volume_ubo = RD::get_singleton()->uniform_buffer_create(sizeof(VolumetricFogShader::VolumeUBO));
+		volumetric_fog.world_grid_ubo = RD::get_singleton()->uniform_buffer_create(sizeof(VolumetricFogShader::WorldGridUBO));
+
+		RD::TextureFormat tf;
+		tf.format = RD::DATA_FORMAT_R32_UINT;
+		tf.texture_type = RD::TEXTURE_TYPE_3D;
+		tf.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT;
+		Vector<uint8_t> zero;
+		zero.resize_initialized(4);
+		volumetric_fog.world_grid_empty_map = RD::get_singleton()->texture_create(tf, RD::TextureView(), { zero });
+		RD::get_singleton()->set_resource_name(volumetric_fog.world_grid_empty_map, "Fog world grid empty map");
 	}
 
 	{
@@ -344,6 +369,13 @@ Ref<Fog::VolumetricFog> Fog::get_active(RenderSceneBuffersRD *p_render_buffers, 
 	return p_render_buffers->get_custom_data(RB_SCOPE_FOG);
 }
 
+Ref<Fog::VolumetricFogWorldGrid> Fog::get_active_world_grid(RenderSceneBuffersRD *p_render_buffers, RID p_environment) {
+	if (p_render_buffers == nullptr || !p_render_buffers->has_custom_data(RB_SCOPE_FOG_WORLD_GRID) || p_environment.is_null() || !RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_enabled(p_environment)) {
+		return Ref<VolumetricFogWorldGrid>();
+	}
+	return p_render_buffers->get_custom_data(RB_SCOPE_FOG_WORLD_GRID);
+}
+
 void Fog::free_fog_shader() {
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
 	for (int i = 0; i < VolumetricFogShader::VOLUMETRIC_FOG_PROCESS_SHADER_MAX; i++) {
@@ -354,6 +386,12 @@ void Fog::free_fog_shader() {
 	}
 	if (volumetric_fog.volume_ubo.is_valid()) {
 		RD::get_singleton()->free_rid(volumetric_fog.volume_ubo);
+	}
+	if (volumetric_fog.world_grid_ubo.is_valid()) {
+		RD::get_singleton()->free_rid(volumetric_fog.world_grid_ubo);
+	}
+	if (volumetric_fog.world_grid_empty_map.is_valid()) {
+		RD::get_singleton()->free_rid(volumetric_fog.world_grid_empty_map);
 	}
 	if (volumetric_fog.params_ubo.is_valid()) {
 		RD::get_singleton()->free_rid(volumetric_fog.params_ubo);
@@ -397,6 +435,7 @@ void Fog::FogShaderData::set_code(const String &p_code) {
 		version = fog_singleton->volumetric_fog.shader.version_create();
 	} else {
 		pipeline.free();
+		world_grid_pipeline.free();
 	}
 
 	fog_singleton->volumetric_fog.shader.version_set_compute_code(version, gen_code.code, gen_code.uniforms, gen_code.stage_globals[ShaderCompiler::STAGE_COMPUTE], gen_code.defines);
@@ -432,6 +471,7 @@ Pair<ShaderRD *, RID> Fog::FogShaderData::get_native_shader_and_version() const 
 
 Fog::FogShaderData::~FogShaderData() {
 	pipeline.free();
+	world_grid_pipeline.free();
 
 	Fog *fog_singleton = Fog::get_singleton();
 	ERR_FAIL_NULL(fog_singleton);
@@ -1255,4 +1295,187 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const P
 	RENDER_TIMESTAMP("< Volumetric Fog");
 	RD::get_singleton()->draw_command_end_label();
 	RD::get_singleton()->draw_command_end_label();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Volumetric Fog World Grid
+
+void Fog::VolumetricFogWorldGrid::init(const Vector3i &p_size) {
+	size = p_size;
+
+	RD::TextureFormat tf;
+	tf.format = RD::DATA_FORMAT_R32_UINT;
+	tf.width = p_size.x;
+	tf.height = p_size.y;
+	tf.depth = p_size.z;
+	tf.texture_type = RD::TEXTURE_TYPE_3D;
+	tf.usage_bits = RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_COPY_TO_BIT | RD::TEXTURE_USAGE_STORAGE_ATOMIC_BIT;
+
+	density_map = RD::get_singleton()->texture_create(tf, RD::TextureView());
+	RD::get_singleton()->set_resource_name(density_map, "Fog world grid density map");
+	light_map = RD::get_singleton()->texture_create(tf, RD::TextureView());
+	RD::get_singleton()->set_resource_name(light_map, "Fog world grid light map");
+	emissive_map = RD::get_singleton()->texture_create(tf, RD::TextureView());
+	RD::get_singleton()->set_resource_name(emissive_map, "Fog world grid emissive map");
+}
+
+Fog::VolumetricFogWorldGrid::~VolumetricFogWorldGrid() {
+	if (uniform_set.is_valid() && RD::get_singleton()->uniform_set_is_valid(uniform_set)) {
+		RD::get_singleton()->free_rid(uniform_set);
+	}
+	RD::get_singleton()->free_rid(density_map);
+	RD::get_singleton()->free_rid(light_map);
+	RD::get_singleton()->free_rid(emissive_map);
+}
+
+void Fog::volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffers, const Transform3D &p_cam_transform, double p_time, const PagedArray<RID> &p_fog_volumes) {
+	ERR_FAIL_NULL(p_render_buffers);
+	RenderingDevice *rd = RD::get_singleton();
+	if (!rd->has_feature(RD::SUPPORTS_IMAGE_ATOMIC_32_BIT)) {
+		WARN_PRINT_ONCE("FogVolumes are missing from the path tracer's fog grid: the GPU lacks 32-bit image atomics.");
+		return;
+	}
+	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
+
+	const Vector3 grid_extent = GLOBAL_GET_CACHED(Vector3, "rendering/pathtracing/volumetric_fog_world_grid_size");
+	const float voxel_size = MAX(float(GLOBAL_GET_CACHED(double, "rendering/pathtracing/volumetric_fog_world_grid_voxel_size")), 0.01f);
+	const int32_t max_size = rd->limit_get(RD::LIMIT_MAX_TEXTURE_SIZE_3D);
+	const Vector3i size = Vector3i((grid_extent / voxel_size).ceil()).clampi(1, max_size);
+
+	Ref<VolumetricFogWorldGrid> grid;
+	if (p_render_buffers->has_custom_data(RB_SCOPE_FOG_WORLD_GRID)) {
+		grid = p_render_buffers->get_custom_data(RB_SCOPE_FOG_WORLD_GRID);
+	}
+	if (grid.is_null() || grid->size != size) {
+		grid.instantiate();
+		grid->init(size);
+		p_render_buffers->set_custom_data(RB_SCOPE_FOG_WORLD_GRID, grid);
+	}
+
+	// Snapped to whole voxels so the grid doesn't swim as the camera moves.
+	grid->voxel_size = voxel_size;
+	grid->origin = ((p_cam_transform.origin - Vector3(size) * voxel_size * 0.5) / voxel_size).floor() * voxel_size;
+
+	rd->texture_clear(grid->density_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
+	rd->texture_clear(grid->light_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
+	rd->texture_clear(grid->emissive_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
+
+	if (p_fog_volumes.size() == 0) {
+		return;
+	}
+
+	RENDER_TIMESTAMP("Render FogVolumes World Grid");
+	rd->draw_command_begin_label("Render Volumetric Fog Volumes World Grid");
+
+	const int world_grid_group = _get_fog_shader_group() + VolumetricFogShader::SHADER_GROUP_MAX;
+	if (!volumetric_fog.shader.is_group_enabled(world_grid_group)) {
+		volumetric_fog.shader.enable_group(world_grid_group);
+	}
+	if (volumetric_fog.default_world_grid_shader_rd.is_null()) {
+		FogMaterialData *md = static_cast<FogMaterialData *>(material_storage->material_get_data(volumetric_fog.default_material, RendererRD::MaterialStorage::SHADER_TYPE_FOG));
+		volumetric_fog.default_world_grid_shader_rd = volumetric_fog.shader.version_get_shader(md->shader_data->version, _get_fog_world_grid_variant());
+	}
+
+	VolumetricFogShader::WorldGridUBO params;
+	params.grid_origin[0] = grid->origin.x;
+	params.grid_origin[1] = grid->origin.y;
+	params.grid_origin[2] = grid->origin.z;
+	params.voxel_size = voxel_size;
+	params.fog_volume_size[0] = size.x;
+	params.fog_volume_size[1] = size.y;
+	params.fog_volume_size[2] = size.z;
+	params.time = p_time;
+	rd->buffer_update(volumetric_fog.world_grid_ubo, 0, sizeof(VolumetricFogShader::WorldGridUBO), &params);
+
+	if (grid->uniform_set.is_null() || !rd->uniform_set_is_valid(grid->uniform_set)) {
+		Vector<RD::Uniform> uniforms;
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 1, grid->emissive_map));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_UNIFORM_BUFFER, 2, volumetric_fog.world_grid_ubo));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 3, grid->density_map));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 4, grid->light_map));
+		grid->uniform_set = rd->uniform_set_create(uniforms, volumetric_fog.default_world_grid_shader_rd, VolumetricFogShader::FogSet::FOG_SET_UNIFORMS);
+	}
+
+	RD::ComputeListID compute_list = rd->compute_list_begin();
+	bool any_uses_time = false;
+
+	for (uint32_t i = 0; i < p_fog_volumes.size(); i++) {
+		FogVolumeInstance *fog_volume_instance = fog_volume_instance_owner.get_or_null(p_fog_volumes[i]);
+		ERR_CONTINUE(fog_volume_instance == nullptr);
+		RID fog_volume = fog_volume_instance->volume;
+
+		// Same material fallback as the froxel pass.
+		FogMaterialData *material = nullptr;
+		RID fog_material = fog_volume_get_material(fog_volume);
+		if (fog_material.is_valid()) {
+			material = static_cast<FogMaterialData *>(material_storage->material_get_data(fog_material, RendererRD::MaterialStorage::SHADER_TYPE_FOG));
+			if (!material || !material->shader_data->valid) {
+				material = nullptr;
+			}
+		}
+		if (!material) {
+			material = static_cast<FogMaterialData *>(material_storage->material_get_data(volumetric_fog.default_material, RendererRD::MaterialStorage::SHADER_TYPE_FOG));
+		}
+		ERR_CONTINUE(material == nullptr || material->shader_data == nullptr);
+
+		FogShaderData *shader_data = material->shader_data;
+		RID pipeline = shader_data->world_grid_pipeline.get_rid();
+		if (pipeline.is_null()) {
+			RID shader = volumetric_fog.shader.version_get_shader(shader_data->version, _get_fog_world_grid_variant());
+			ERR_CONTINUE(shader.is_null());
+			shader_data->world_grid_pipeline.create_compute_pipeline(shader);
+			pipeline = shader_data->world_grid_pipeline.get_rid();
+		}
+		any_uses_time |= shader_data->uses_time;
+
+		RSE::FogVolumeShape shape = fog_volume_get_shape(fog_volume);
+		Vector3 extents = fog_volume_get_size(fog_volume) / 2;
+		Vector3i voxel_min;
+		Vector3i voxel_max = size;
+		if (shape != RSE::FOG_VOLUME_SHAPE_WORLD) {
+			AABB bounds = fog_volume_instance->transform.xform(AABB(-extents, extents * 2));
+			voxel_min = Vector3i(((bounds.position - grid->origin) / voxel_size).floor()).max(Vector3i());
+			voxel_max = Vector3i(((bounds.get_end() - grid->origin) / voxel_size).ceil()).min(size);
+		} else {
+			// World volumes cover the whole grid, SIZE is the grid's size in meters.
+			extents = Vector3(size) * voxel_size * 0.5;
+		}
+
+		Vector3i kernel_size = voxel_max - voxel_min;
+		if (kernel_size.x <= 0 || kernel_size.y <= 0 || kernel_size.z <= 0) {
+			continue;
+		}
+
+		VolumetricFogShader::FogPushConstant push_constant;
+		Vector3 fog_position = fog_volume_instance->transform.get_origin();
+		push_constant.position[0] = fog_position.x;
+		push_constant.position[1] = fog_position.y;
+		push_constant.position[2] = fog_position.z;
+		push_constant.size[0] = extents.x * 2;
+		push_constant.size[1] = extents.y * 2;
+		push_constant.size[2] = extents.z * 2;
+		push_constant.corner[0] = voxel_min.x;
+		push_constant.corner[1] = voxel_min.y;
+		push_constant.corner[2] = voxel_min.z;
+		push_constant.shape = uint32_t(shape);
+		RendererRD::MaterialStorage::store_transform(fog_volume_instance->transform.affine_inverse(), push_constant.transform);
+
+		rd->compute_list_bind_compute_pipeline(compute_list, pipeline);
+		rd->compute_list_bind_uniform_set(compute_list, grid->uniform_set, VolumetricFogShader::FogSet::FOG_SET_UNIFORMS);
+		rd->compute_list_set_push_constant(compute_list, &push_constant, sizeof(VolumetricFogShader::FogPushConstant));
+		rd->compute_list_bind_uniform_set(compute_list, volumetric_fog.base_uniform_set, VolumetricFogShader::FogSet::FOG_SET_BASE);
+		if (material->uniform_set.is_valid() && rd->uniform_set_is_valid(material->uniform_set)) { // Material may not have a uniform set.
+			rd->compute_list_bind_uniform_set(compute_list, material->uniform_set, VolumetricFogShader::FogSet::FOG_SET_MATERIAL);
+			material->set_as_used();
+		}
+
+		rd->compute_list_dispatch_threads(compute_list, kernel_size.x, kernel_size.y, kernel_size.z);
+	}
+
+	rd->compute_list_end();
+	rd->draw_command_end_label();
+
+	if (any_uses_time) {
+		RenderingServerDefault::redraw_request();
+	}
 }
