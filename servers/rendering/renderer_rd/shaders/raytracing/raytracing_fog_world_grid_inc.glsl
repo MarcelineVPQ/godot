@@ -53,7 +53,8 @@ bool rt_fog_world_grid_transport_enabled() {
 }
 
 // With light transport through the grid, the Environment's global volumetric fog is part of the same medium: a
-// homogeneous one within volumetric_fog_length of the camera. Its density is 0 otherwise.
+// homogeneous one inside a sphere of radius volumetric_fog_length centered on the camera, so it moves with the camera
+// and isn't fixed in the world. Its density is 0 otherwise.
 float rt_fog_global_density() {
 	return get_rt_param(RT_PARAM_FOG_GLOBAL_DENSITY);
 }
