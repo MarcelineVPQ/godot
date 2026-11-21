@@ -39,6 +39,7 @@
 #include "core/templates/vector.h"
 #include "servers/rendering/renderer_rd/bindless_block.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_raytracing_capture.h"
+#include "servers/rendering/renderer_rd/forward_clustered/render_raytracing_cluster_lod.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_raytracing_debug.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_raytracing_plan.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_raytracing_scheduler.h"
@@ -661,10 +662,11 @@ struct RTClusterBuffers {
 	RID triangles; // Cluster-local vertex indices, one byte each.
 	RID indices; // Surface vertex indices of the cluster triangles, for shading.
 	RID clusters; // RTClusterData of every cluster.
+	RTClusterLodSurface lod; // With cluster LOD, which then traces every level instead of only the finest.
 };
 
 struct RTSurfaceData {
-	RID blas;
+	RID blas; // Unset with cluster LOD, whose BLASes are per instance (see RTClusterLodSelector).
 	RTClusterBuffers cluster_buffers; // Only for surfaces traced from clusters.
 	// Maps compressed positions to mesh space during the BLAS build; invalid when uncompressed.
 	RTBlasTransformPool::Slot blas_transform;
@@ -672,6 +674,9 @@ struct RTSurfaceData {
 	RTGeometrySources sources;
 	bool is_compressed = false;
 	uint64_t blas_size = 0;
+
+	// False until it has a BLAS, or with cluster LOD the clusters its instances' BLASes are built from.
+	bool is_traceable() const { return blas.is_valid() || cluster_buffers.lod.cluster_set.is_valid(); }
 };
 
 // Identifies a multi-geometry BLAS: a mesh and the subset of its surfaces merged into one TLAS instance.
@@ -1155,6 +1160,9 @@ struct RTViewportState {
 	// Set per frame: the screen-space sky texture was drawn and primary-ray
 	// misses should read it instead of the prefiltered radiance octmap.
 	bool sky_screen_enabled = false;
+
+	// Cluster LOD cuts picked from this viewport's camera.
+	RTClusterLodSelector::View cluster_lod;
 };
 
 class RenderRaytracing {
@@ -1170,6 +1178,8 @@ class RenderRaytracing {
 
 	// rendering/pathtracing/cluster_geometry/enabled, when the device supports cluster acceleration structures.
 	bool cluster_geometry = false;
+	// Enabled with rendering/pathtracing/cluster_geometry/lod on top of cluster_geometry.
+	RTClusterLodSelector cluster_lod;
 
 	// Caching (chunked sparse caches indexed by RID low bits / 256).
 	Vector<RTCacheEntry *> surface_chunks;

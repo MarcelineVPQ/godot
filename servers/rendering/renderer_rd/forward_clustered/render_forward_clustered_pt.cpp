@@ -46,6 +46,10 @@
 //      copies them into their cache entries and bakes MultiMesh and particle surfaces into merged buffers. Everything
 //      this phase reads and writes is bound or copied through RD, so the graph orders it. Only this phase writes data
 //      that is later read through device addresses.
+//      With cluster LOD, build_tlas() ends the phase by building the cluster sets of new surfaces, as a batch behind
+//      the barrier of RD::acceleration_structure_build_batch() and followed by untracked_barrier(), then picks the
+//      cuts with a compute dispatch that reads those sets' addresses and writes the cluster references the builds of
+//      phase 2 read, all through device addresses.
 //   -- barrier --  (recorded by RD::acceleration_structure_build_batch())
 //   2. Builds. One batch: all dirty BLAS builds, then all BLAS refits, then both TLASes of the view. The batch adds
 //      barriers of its own: one before the TLAS builds, which read the BLASes, and one each time the shared scratch

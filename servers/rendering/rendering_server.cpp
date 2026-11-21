@@ -3875,6 +3875,9 @@ void RenderingServer::init() {
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/limits/cluster_builder/max_clustered_elements", PROPERTY_HINT_RANGE, "32,8192,1"), 512);
 	GLOBAL_DEF("rendering/pathtracing/use_shader_execution_reordering", true);
 	GLOBAL_DEF("rendering/pathtracing/async_shader_compilation", true);
+	GLOBAL_DEF_RST("rendering/pathtracing/cluster_geometry/lod", true);
+	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/pathtracing/cluster_geometry/lod_error_threshold", PROPERTY_HINT_RANGE, "0.1,8,0.05,suffix:px"), 1.0);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/pathtracing/cluster_geometry/lod_max_rebuilds_per_frame", PROPERTY_HINT_RANGE, "1,4096,1,or_greater"), 64);
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/pathtracing/debug_heatmap_max_ticks", PROPERTY_HINT_RANGE, "1,10000000,1,or_greater"), 100000.0);
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/pathtracing/debug_heatmap_opacity", PROPERTY_HINT_RANGE, "0,1,0.01"), 0.35);
 	// Transparency budgets are live UBO parameters.
