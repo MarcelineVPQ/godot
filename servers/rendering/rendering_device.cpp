@@ -557,6 +557,7 @@ RID RenderingDevice::cluster_set_create(RID p_vertex_buffer, RID p_index_buffer,
 	ERR_FAIL_COND_V(_cluster_inputs_check(p_vertex_buffer, p_index_buffer, p_clusters, inputs) != OK, RID());
 	Buffer *address_buffer = storage_buffer_owner.get_or_null(p_address_buffer);
 	ERR_FAIL_NULL_V_MSG(address_buffer, RID(), "The address buffer must be a valid storage buffer.");
+	ERR_FAIL_COND_V_MSG(!address_buffer->usage.has_flag(RDD::BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT), RID(), "The address buffer must be created with BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT.");
 	ERR_FAIL_COND_V_MSG(p_address_offset % sizeof(uint64_t) != 0 || p_address_offset + uint64_t(p_clusters.size()) * sizeof(uint64_t) > address_buffer->size, RID(), "The cluster addresses must fit the address buffer, 8-byte aligned.");
 	_check_transfer_worker_buffer(address_buffer);
 	if (address_buffer->draw_tracker != nullptr) {
@@ -1965,6 +1966,9 @@ RID RenderingDevice::storage_buffer_create(uint32_t p_size_bytes, Span<uint8_t> 
 				"The GPU doesn't support acceleration structure build input flag.");
 #endif
 		buffer.usage.set_flag(RDD::BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT);
+	}
+	if (p_creation_bits.has_flag(BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT)) {
+		buffer.usage.set_flag(RDD::BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT);
 	}
 
 	buffer.driver_id = driver->buffer_create(buffer.size, buffer.usage, RDD::MEMORY_ALLOCATION_TYPE_GPU, frames_drawn);

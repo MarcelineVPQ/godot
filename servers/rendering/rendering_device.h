@@ -869,6 +869,7 @@ public:
 		BUFFER_CREATION_AS_STORAGE_BIT = (1 << 1),
 		BUFFER_CREATION_DYNAMIC_PERSISTENT_BIT = (1 << 2),
 		BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT = (1 << 3),
+		BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT = (1 << 4), // For the address buffers of cluster_set_create().
 	};
 
 	enum StorageBufferUsage {
@@ -1464,7 +1465,8 @@ public:
 	// that BLASes made with blas_create_from_cluster_references() pick clusters from. It is built through
 	// acceleration_structure_build_batch() like a BLAS, but can't be an instance of a TLAS. Each build writes the device
 	// address of every cluster, in order, as a uint64 to p_address_buffer from p_address_offset (a storage buffer with a
-	// device address). A build moves the clusters, so the BLASes over them must be built again after it.
+	// device address and BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT). A build moves the clusters, so the BLASes
+	// over them must be built again after it.
 	RID cluster_set_create(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, RID p_address_buffer, uint64_t p_address_offset, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags);
 	// A BLAS over at most p_max_cluster_count clusters of p_cluster_set, chosen anew for each build, on the GPU if wanted:
 	// each build reads an AccelerationStructureClusterReferences at p_references_offset (a multiple of 16) of

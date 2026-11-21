@@ -6958,8 +6958,9 @@ RDD::AccelerationStructureID RenderingDeviceDriverVulkan::blas_create_from_clust
 		ERR_FAIL_V_MSG(AccelerationStructureID(), "Couldn't allocate the memory of a cluster acceleration structure.");
 	}
 
-	// The only input the CPU writes: where the BLAS goes.
-	build->input_buffer = buffer_create(sizeof(VkDeviceAddress), BUFFER_USAGE_STORAGE_BIT | BUFFER_USAGE_DEVICE_ADDRESS_BIT | BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT, MEMORY_ALLOCATION_TYPE_CPU, UINT64_MAX);
+	// The only input the CPU writes: where the BLAS goes. As a destination address array, it must be in acceleration
+	// structure storage.
+	build->input_buffer = buffer_create(sizeof(VkDeviceAddress), BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT | BUFFER_USAGE_STORAGE_BIT | BUFFER_USAGE_DEVICE_ADDRESS_BIT | BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT, MEMORY_ALLOCATION_TYPE_CPU, UINT64_MAX);
 	uint8_t *inputs = build->input_buffer ? buffer_map(build->input_buffer) : nullptr;
 	if (!inputs) {
 		buffer_free(storage);

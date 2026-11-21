@@ -2650,7 +2650,7 @@ static bool _populate_cluster_lod(const MeshClusterData::View &p_view, Span<RD::
 	lod.finest_triangle_count = p_view.get_header().finest_triangle_count;
 
 	lod.lods = rd->storage_buffer_create(lods.size() * sizeof(RTClusterLod), Span<uint8_t>(reinterpret_cast<const uint8_t *>(lods.ptr()), lods.size() * sizeof(RTClusterLod)), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
-	lod.cluster_addresses = rd->storage_buffer_create(lods.size() * sizeof(uint64_t), {}, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+	lod.cluster_addresses = rd->storage_buffer_create(lods.size() * sizeof(uint64_t), {}, 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_STORAGE_BIT);
 	ERR_FAIL_COND_V_MSG(lod.lods.is_null() || lod.cluster_addresses.is_null(), false, "Path tracing: Couldn't allocate the cluster LOD buffers of a mesh surface.");
 	rd->set_resource_name(lod.lods, "RT cluster LOD data [" + p_key + "]");
 	rd->set_resource_name(lod.cluster_addresses, "RT cluster addresses [" + p_key + "]");
