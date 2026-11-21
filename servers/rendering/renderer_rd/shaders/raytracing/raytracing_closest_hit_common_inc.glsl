@@ -434,22 +434,8 @@ vec3 debug_cluster_color(int p_vis_mode) {
 		return debug_hash_color(pcg_hash(instance_seed ^ RT_HIT_PRIMITIVE_ID(geom)));
 	} else if (p_vis_mode == RT_VIS_CLUSTERS) {
 		return debug_hash_color(pcg_hash(instance_seed ^ cluster));
-	} else if (p_vis_mode == RT_VIS_CLUSTER_GROUPS) {
-		return debug_hash_color(pcg_hash(instance_seed ^ pcg_hash(data.group)));
-	} else if (p_vis_mode == RT_VIS_CLUSTER_LOD_LEVEL) {
-		// Finest (the source mesh) blue, coarsest red.
-		uint level = data.level & 0xFFFFu;
-		uint levels = data.level >> 16u;
-		return debug_heat_color(levels > 1u ? float(level) / float(levels - 1u) : 0.0);
 	}
-	// Simplification error projected to pixels from the ray origin, like a LOD cut would: blue at 0, green at
-	// 1 px, red at 2 px and above.
-	mat4x3 object_to_world = gl_ObjectToWorldEXT;
-	float scale = max(length(object_to_world[0]), max(length(object_to_world[1]), length(object_to_world[2])));
-	vec3 center = object_to_world * vec4(data.center, 1.0);
-	float distance_to_bounds = max(distance(gl_WorldRayOriginEXT, center) - data.radius * scale, scene_data_block.data.z_near);
-	float pixels = data.error * scale / distance_to_bounds * scene_data_block.data.projection_matrix[1][1] * 0.5 * scene_data_block.data.viewport_size.y;
-	return debug_heat_color(pixels * 0.5);
+	return debug_hash_color(pcg_hash(instance_seed ^ pcg_hash(data.group)));
 }
 
 // Opacity range of transparent layers: faint particles stay visible, near-opaque ones still show what's behind.

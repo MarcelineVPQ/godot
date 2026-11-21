@@ -67,12 +67,10 @@
 #define RT_VIS_CLUSTER_TRIANGLES 31
 #define RT_VIS_CLUSTERS 32
 #define RT_VIS_CLUSTER_GROUPS 33
-#define RT_VIS_CLUSTER_LOD_LEVEL 34
-#define RT_VIS_CLUSTER_ERROR 35
 
 // The unshaded views of geometry traced from clusters, drawn on black.
 bool rt_debug_is_cluster_mode(int p_vis_mode) {
-	return p_vis_mode >= RT_VIS_CLUSTER_TRIANGLES && p_vis_mode <= RT_VIS_CLUSTER_ERROR;
+	return p_vis_mode >= RT_VIS_CLUSTER_TRIANGLES && p_vis_mode <= RT_VIS_CLUSTER_GROUPS;
 }
 
 // True when p_vis_mode traces transparency peels: normal shading, and the debug views that show transparent layers.

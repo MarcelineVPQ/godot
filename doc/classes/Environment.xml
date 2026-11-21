@@ -590,12 +590,6 @@
 		<constant name="RT_DEBUG_CLUSTER_GROUPS" value="33" enum="PathtracingDebugMode">
 			Like [constant RT_DEBUG_CLUSTER_TRIANGLES], with one random color per cluster group: the clusters simplified together into the next level of detail.
 		</constant>
-		<constant name="RT_DEBUG_CLUSTER_LOD_LEVEL" value="34" enum="PathtracingDebugMode">
-			Like [constant RT_DEBUG_CLUSTER_TRIANGLES], colored by each cluster's level of detail, from blue for the source mesh through cyan, green and yellow to red for the mesh's coarsest level. Path tracing currently uses the source mesh's clusters only, so traced clusters are blue.
-		</constant>
-		<constant name="RT_DEBUG_CLUSTER_ERROR" value="35" enum="PathtracingDebugMode">
-			Like [constant RT_DEBUG_CLUSTER_TRIANGLES], colored by each cluster's simplification error projected to pixels at the internal render resolution, as seen from the ray origin: blue for none, green for 1 pixel, red for 2 pixels or more. Path tracing currently uses the source mesh's clusters only, which have no error, so traced clusters are blue.
-		</constant>
 		<constant name="FOG_MODE_EXPONENTIAL" value="0" enum="FogMode">
 			Use a physically-based fog model defined primarily by fog density.
 		</constant>
