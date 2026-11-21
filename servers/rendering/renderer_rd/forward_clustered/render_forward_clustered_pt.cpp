@@ -594,6 +594,9 @@ void RenderForwardClusteredPT::_render_scene(RenderDataRD *p_render_data, const 
 
 		RD::get_singleton()->draw_command_begin_label("Render 3D Transparent Pass");
 
+		// With light transport, the traced medium behind these transparents already holds the fog's light, which the
+		// froxels lack the multiple scattering for: they take only the froxels' transmittance.
+		p_render_data->scene_data->volumetric_fog_transmittance_only = GLOBAL_GET_CACHED(bool, "rendering/pathtracing/volumetric_fog_world_grid_transport");
 		uint32_t transparent_pass_uniform_buffer_index = _setup_environment(p_render_data, false, screen_size, screen_size, p_default_bg_color, false);
 
 		RID rp_uniform_set = _setup_render_pass_uniform_set(RENDER_LIST_ALPHA, p_render_data, radiance_texture, samplers, transparent_pass_uniform_buffer_index, true);
@@ -893,7 +896,7 @@ void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_
 	if (world_grid_transport_setting && !p_raster_transparents) {
 		// With light transport, the FogVolumes and the Environment's global fog are one medium that every path segment
 		// is traced through, so the path tracer doesn't use the froxels. They are kept for the reason above, and still
-		// updated for transparents drawn by the rasterizer, which apply them as in raster rendering.
+		// updated for transparents drawn by the rasterizer, which take their transmittance.
 		return;
 	}
 

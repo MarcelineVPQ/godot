@@ -75,6 +75,7 @@ public:
 	bool material_uv2_mode = false;
 	float emissive_exposure_normalization = 0.0;
 	bool shadow_pass = false;
+	bool volumetric_fog_transmittance_only = false; ///< The path tracer's medium already holds the fog's light.
 
 	Size2 shadow_atlas_pixel_size;
 	Size2 directional_shadow_pixel_size;
@@ -116,6 +117,7 @@ private:
 		SCENE_DATA_FLAGS_USE_DEPTH_FOG = 1 << 8,
 		SCENE_DATA_FLAGS_DEBUG_VOLUMETRIC_FOG = 1 << 9,
 		SCENE_DATA_FLAGS_DEBUG_VOLUMETRIC_FOG_TRANSMITTANCE = 1 << 10,
+		SCENE_DATA_FLAGS_VOLUMETRIC_FOG_TRANSMITTANCE_ONLY = 1 << 11,
 		SCENE_DATA_FLAGS_MAX
 	};
 

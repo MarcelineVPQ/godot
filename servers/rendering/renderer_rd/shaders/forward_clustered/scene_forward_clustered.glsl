@@ -1486,6 +1486,7 @@ void fragment_shader(in SceneData scene_data) {
 
 #ifndef FOG_DISABLED
 	vec4 volumetric_fog = vec4(0.0, 0.0, 0.0, 1.0);
+	float volumetric_fog_alpha_transmittance = 1.0;
 #ifndef CUSTOM_FOG_USED
 	// fog must be processed as early as possible and then packed.
 	// to maximize VGPR usage
@@ -1504,6 +1505,11 @@ void fragment_shader(in SceneData scene_data) {
 #else
 		volumetric_fog = volumetric_fog_process(screen_uv, -vertex.z);
 #endif
+		if (bool(scene_data.flags & SCENE_DATA_FLAGS_VOLUMETRIC_FOG_TRANSMITTANCE_ONLY)) {
+			// The traced medium behind already holds the fog's light: the froxels only hide the fragment, through its alpha.
+			volumetric_fog_alpha_transmittance = volumetric_fog.a;
+			volumetric_fog = vec4(0.0, 0.0, 0.0, 1.0);
+		}
 		vec4 res = vec4(0.0);
 		if (bool(scene_data.flags & SCENE_DATA_FLAGS_USE_FOG)) {
 			//must use the full blending equation here to blend fogs
@@ -3104,6 +3110,9 @@ void fragment_shader(in SceneData scene_data) {
 #endif
 
 	alpha *= scene_data.pass_alpha_multiplier;
+#ifndef FOG_DISABLED
+	alpha *= volumetric_fog_alpha_transmittance;
+#endif //!FOG_DISABLED
 
 #ifdef MODE_UNSHADED
 	frag_color = vec4(albedo, alpha);
@@ -3114,6 +3123,9 @@ void fragment_shader(in SceneData scene_data) {
 
 #ifndef FOG_DISABLED
 	frag_color.rgb = frag_color.rgb * fog.a + fog.rgb;
+#ifdef BLEND_PREMUL_ALPHA_USED
+	frag_color.rgb *= volumetric_fog_alpha_transmittance; // Premultiplied blending adds the color regardless of alpha.
+#endif
 #endif //!FOG_DISABLED
 
 #if defined(PREMUL_ALPHA_USED) && !defined(MODE_RENDER_DEPTH)
