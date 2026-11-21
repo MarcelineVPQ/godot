@@ -4450,6 +4450,25 @@ void RenderingDeviceDriverVulkan::framebuffer_free(FramebufferID p_framebuffer) 
 /**** SHADER ****/
 /****************/
 
+// re-spirv can't parse OpTypeForwardPointer, which glslang emits for every buffer reference type.
+// Such modules declare the PhysicalStorageBufferAddresses capability, and capabilities come first.
+static bool _spirv_uses_buffer_references(const PackedByteArray &p_spirv) {
+	const uint32_t SPIRV_HEADER_WORDS = 5;
+	const uint32_t SPIRV_OP_CAPABILITY = 17;
+	const uint32_t SPIRV_CAPABILITY_PHYSICAL_STORAGE_BUFFER_ADDRESSES = 5347;
+
+	const uint32_t *words = reinterpret_cast<const uint32_t *>(p_spirv.ptr());
+	const uint32_t word_count = p_spirv.size() / sizeof(uint32_t);
+	uint32_t i = SPIRV_HEADER_WORDS;
+	while (i + 1 < word_count && (words[i] & 0xFFFF) == SPIRV_OP_CAPABILITY) {
+		if (words[i + 1] == SPIRV_CAPABILITY_PHYSICAL_STORAGE_BUFFER_ADDRESSES) {
+			return true;
+		}
+		i += MAX(words[i] >> 16, 1u);
+	}
+	return false;
+}
+
 static VkShaderStageFlagBits RD_STAGE_TO_VK_SHADER_STAGE_BITS[RDD::SHADER_STAGE_MAX] = {
 	VK_SHADER_STAGE_VERTEX_BIT,
 	VK_SHADER_STAGE_FRAGMENT_BIT,
@@ -4622,7 +4641,11 @@ RDD::ShaderID RenderingDeviceDriverVulkan::shader_create_from_container(const Re
 
 		shader_info.original_stage_size.push_back(decoded_spirv.size());
 
-		if (use_respv) {
+		if (use_respv && _spirv_uses_buffer_references(decoded_spirv)) {
+			if (store_respv) {
+				shader_info.respv_stage_shaders.push_back(respv::Shader());
+			}
+		} else if (use_respv) {
 			const bool inline_data = store_respv || (RESPV_ONLY_INLINE_SHADERS_WITH_SPEC_CONSTANTS == 0);
 			respv::Shader respv_shader(decoded_spirv.ptr(), decoded_spirv.size(), inline_data);
 			if (respv_shader.empty()) {
