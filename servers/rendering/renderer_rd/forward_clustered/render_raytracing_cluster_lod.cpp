@@ -62,6 +62,13 @@ void RTClusterLodSelector::initialize(bool p_enabled) {
 	if (!enabled) {
 		return;
 	}
+	// The selection compacts each cut with subgroup ballots and sums its triangles with subgroup arithmetic.
+	const uint64_t needed_operations = RD::SUBGROUP_BASIC_BIT | RD::SUBGROUP_BALLOT_BIT | RD::SUBGROUP_ARITHMETIC_BIT;
+	const bool subgroups = (RD::get_singleton()->limit_get(RD::LIMIT_SUBGROUP_OPERATIONS) & needed_operations) == needed_operations && (RD::get_singleton()->limit_get(RD::LIMIT_SUBGROUP_IN_SHADERS) & RD::SHADER_STAGE_COMPUTE_BIT);
+	if (!subgroups) {
+		enabled = false;
+		ERR_FAIL_MSG("Path tracing: Cluster level of detail needs subgroup ballot and arithmetic operations in compute shaders, which this GPU doesn't offer; surfaces are traced from their finest clusters.");
+	}
 	Vector<String> modes;
 	modes.push_back("\n");
 	shader.initialize(modes);
