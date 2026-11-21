@@ -13,8 +13,12 @@ layout(set = 0, binding = 45) uniform utexture3D rt_fog_world_grid_majorant;
 // Must match DENSITY_SCALE of MODE_WORLD_GRID in volumetric_fog.glsl.
 #define RT_FOG_WORLD_GRID_SCALE 16384.0
 #define RT_FOG_WORLD_GRID_BRICK_SIZE 8.0
-// Tentative collisions one tracked ray may test. Past this, the rest of the ray counts as clear.
-#define RT_FOG_WORLD_GRID_MAX_COLLISIONS 256
+// Tentative collisions a tracked ray tests freely. Past them, each one ends the walk with probability
+// RT_FOG_WORLD_GRID_ROULETTE_END and the walks that go on weigh that much more (Russian roulette, no bias).
+#define RT_FOG_WORLD_GRID_ROULETTE_COLLISIONS 64
+#define RT_FOG_WORLD_GRID_ROULETTE_END 0.1
+// Safety cap: a walk that reaches it is absorbed. After the roulette above, that takes odds of 0.9^4032.
+#define RT_FOG_WORLD_GRID_MAX_COLLISIONS 4096
 
 struct RTFogWorldGridSample {
 	float extinction; // DENSITY, per meter.
@@ -170,15 +174,23 @@ float rt_fog_world_grid_optical_depth(vec3 p_origin, vec3 p_dir, float p_t_max) 
 
 // Tracks a ray from p_origin along the unit p_dir up to p_t_max meters through the occupied part of the grid, sampling
 // tentative collisions against each brick's highest extinction, so clear bricks cost one fetch and thin ones few steps.
-// Delta tracking (p_ratio false) stops at the first real collision and returns 0 with its distance in r_t, or returns 1
-// when the ray gets through. Ratio tracking (p_ratio true) returns an unbiased estimate of the transmittance.
-float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_ratio, inout uint r_rng, out float r_t) {
+// Delta tracking (p_ratio false) stops at the first real collision: r_collided is then true and r_t its distance. Ratio
+// tracking (p_ratio true) walks the whole ray. The return value is the weight of the walk, which Russian roulette past
+// RT_FOG_WORLD_GRID_ROULETTE_COLLISIONS raises, or 0 when roulette or the safety cap ended it; for ratio tracking it
+// includes the transmittance estimate. Both estimators are unbiased but for the safety cap, which absorbs the walks
+// that reach it (RT_FOG_WORLD_GRID_MAX_COLLISIONS). r_collisions counts the tentative collisions tested.
+float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_ratio, inout uint r_rng, out bool r_collided, out float r_t, out int r_collisions) {
+	r_collided = false;
 	r_t = p_t_max;
-	float brick_size = get_rt_param(RT_PARAM_FOG_WORLD_GRID_VOXEL_SIZE) * RT_FOG_WORLD_GRID_BRICK_SIZE;
+	r_collisions = 0;
+	float voxel_size = get_rt_param(RT_PARAM_FOG_WORLD_GRID_VOXEL_SIZE);
+	float brick_size = voxel_size * RT_FOG_WORLD_GRID_BRICK_SIZE;
 	ivec3 brick_count = textureSize(usampler3D(rt_fog_world_grid_majorant, SAMPLER_NEAREST_CLAMP), 0);
+	ivec3 grid_size = rt_fog_world_grid_size();
+	vec3 grid_origin = rt_fog_world_grid_origin();
 
 	// Positions in brick units from here on; s is the distance in brick sizes, t in meters.
-	vec3 o = (p_origin - rt_fog_world_grid_origin()) / brick_size;
+	vec3 o = (p_origin - grid_origin) / brick_size;
 	vec3 d = mix(p_dir, vec3(1e-8), lessThan(abs(p_dir), vec3(1e-8)));
 	vec3 inv_d = 1.0 / d;
 
@@ -197,13 +209,15 @@ float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_r
 	vec3 s_next = (vec3(brick) + vec3(greaterThan(step_dir, ivec3(0))) - o) * inv_d;
 	vec3 s_delta = abs(inv_d);
 
-	float transmittance = 1.0;
-	int collisions = 0;
+	float weight = 1.0;
 	int max_steps = brick_count.x + brick_count.y + brick_count.z;
 	for (int i = 0; i < max_steps; i++) {
 		float s_exit = min(min(min(s_next.x, s_next.y), s_next.z), s_end);
 		float majorant = rt_fog_world_grid_unpack(texelFetch(usampler3D(rt_fog_world_grid_majorant, SAMPLER_NEAREST_CLAMP), brick, 0).x);
 		if (majorant > 0.0) {
+			// The voxels this brick's majorant was taken over; a point on its faces is clamped back into them.
+			ivec3 voxel_first = brick * int(RT_FOG_WORLD_GRID_BRICK_SIZE);
+			ivec3 voxel_last = min(voxel_first + int(RT_FOG_WORLD_GRID_BRICK_SIZE) - 1, grid_size - 1);
 			float t = s * brick_size;
 			float t_exit = s_exit * brick_size;
 			while (true) {
@@ -211,25 +225,32 @@ float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_r
 				if (t >= t_exit) {
 					break;
 				}
-				collisions++;
-				if (collisions > RT_FOG_WORLD_GRID_MAX_COLLISIONS) {
-					return transmittance;
+				r_collisions++;
+				if (r_collisions >= RT_FOG_WORLD_GRID_MAX_COLLISIONS) {
+					return 0.0;
 				}
-				// A point on a brick face may round into the next brick's voxel, so the ratio is clamped.
-				float ratio = min(rt_fog_world_grid_extinction_at(p_origin + p_dir * t) / majorant, 1.0);
-				if (!p_ratio) {
-					if (rand(r_rng) < ratio) {
-						r_t = t;
+				if (r_collisions > RT_FOG_WORLD_GRID_ROULETTE_COLLISIONS) {
+					if (rand(r_rng) < RT_FOG_WORLD_GRID_ROULETTE_END) {
 						return 0.0;
 					}
+					weight /= 1.0 - RT_FOG_WORLD_GRID_ROULETTE_END;
+				}
+				ivec3 voxel = clamp(ivec3(floor((p_origin + p_dir * t - grid_origin) / voxel_size)), voxel_first, voxel_last);
+				float ratio = rt_fog_world_grid_extinction_at_voxel(voxel) / majorant;
+				if (!p_ratio) {
+					if (rand(r_rng) < ratio) {
+						r_collided = true;
+						r_t = t;
+						return weight;
+					}
 				} else {
-					transmittance *= 1.0 - ratio;
+					weight *= 1.0 - ratio;
 					// Russian roulette once little light is left, so dense media end early without bias.
-					if (transmittance < 0.1) {
-						if (rand(r_rng) >= transmittance * 10.0) {
+					if (weight < 0.1) {
+						if (rand(r_rng) >= weight * 10.0) {
 							return 0.0;
 						}
-						transmittance = 0.1;
+						weight = 0.1;
 					}
 				}
 			}
@@ -252,21 +273,26 @@ float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_r
 			break;
 		}
 	}
-	return transmittance;
+	return weight;
 }
 
-// Samples the first real collision with the medium along a ray, see rt_fog_world_grid_track(). False when there is none.
-bool rt_fog_world_grid_sample_collision(vec3 p_origin, vec3 p_dir, float p_t_max, inout uint r_rng, out float r_t) {
-	return rt_fog_world_grid_track(p_origin, p_dir, p_t_max, false, r_rng, r_t) == 0.0;
+// Samples the first real collision with the medium along a ray, see rt_fog_world_grid_track(): r_collided says whether
+// there is one, r_t where. Returns the weight to multiply the path's throughput with, 0 when the walk was ended.
+float rt_fog_world_grid_free_flight(vec3 p_origin, vec3 p_dir, float p_t_max, inout uint r_rng, out bool r_collided, out float r_t) {
+	int collisions;
+	return rt_fog_world_grid_track(p_origin, p_dir, p_t_max, false, r_rng, r_collided, r_t, collisions);
 }
 
 // Transmittance of the medium along a ray, estimated by ratio tracking (see rt_fog_world_grid_track()).
 float rt_fog_world_grid_transmittance(vec3 p_origin, vec3 p_dir, float p_t_max, inout uint r_rng) {
-	float t_unused;
-	return rt_fog_world_grid_track(p_origin, p_dir, p_t_max, true, r_rng, t_unused);
+	bool collided;
+	float t;
+	int collisions;
+	return rt_fog_world_grid_track(p_origin, p_dir, p_t_max, true, r_rng, collided, t, collisions);
 }
 
 #define RT_VIS_VOLUMETRIC_FOG_WORLD_GRID 30
+#define RT_VIS_VOLUMETRIC_FOG_COLLISIONS 34
 
 // Opacity of the grid along a ray up to p_t (in units of p_dir), magenta when no grid is bound.
 vec3 rt_fog_world_grid_debug(vec3 p_origin, vec3 p_dir, float p_t) {
@@ -275,4 +301,22 @@ vec3 rt_fog_world_grid_debug(vec3 p_origin, vec3 p_dir, float p_t) {
 	}
 	float dir_length = length(p_dir);
 	return vec3(1.0 - exp(-rt_fog_world_grid_optical_depth(p_origin, p_dir / dir_length, p_t * dir_length)));
+}
+
+// Tentative collisions the tracking of a shadow ray tests along a ray up to p_t (in units of p_dir): blue for none,
+// through green to red at RT_FOG_WORLD_GRID_ROULETTE_COLLISIONS, where Russian roulette starts; white where the safety
+// cap absorbed the walk. Magenta means no grid is bound.
+vec3 rt_fog_world_grid_collisions_debug(vec3 p_origin, vec3 p_dir, float p_t, inout uint r_rng) {
+	if (!rt_fog_world_grid_enabled()) {
+		return vec3(1.0, 0.0, 1.0);
+	}
+	float dir_length = length(p_dir);
+	bool collided;
+	float t;
+	int collisions;
+	rt_fog_world_grid_track(p_origin, p_dir / dir_length, p_t * dir_length, true, r_rng, collided, t, collisions);
+	if (collisions >= RT_FOG_WORLD_GRID_MAX_COLLISIONS) {
+		return vec3(1.0);
+	}
+	return debug_heat_color(float(collisions) / float(RT_FOG_WORLD_GRID_ROULETTE_COLLISIONS));
 }

@@ -415,12 +415,6 @@ vec3 debug_hash_color(uint p_hash) {
 	return vec3(0.15) + 0.85 * vec3(uvec3(p_hash, p_hash >> 8u, p_hash >> 16u) & 0xFFu) / 255.0;
 }
 
-// Blue at 0, through cyan, green and yellow, to red at 1.
-vec3 debug_heat_color(float p_t) {
-	float t = clamp(p_t, 0.0, 1.0) * 4.0;
-	return clamp(vec3(t - 2.0, t < 2.0 ? t : 4.0 - t, 2.0 - t), 0.0, 1.0);
-}
-
 // Unshaded color of the cluster debug views at the hit; gray for geometry not traced from clusters.
 vec3 debug_cluster_color(int p_vis_mode) {
 	GeometryData geom = geometries[RT_HIT_GEOMETRY_IDX];
@@ -532,6 +526,8 @@ void debug_visualize(int vis_mode, MaterialDebugInputs dbg, float alpha) {
 		ps.radiance = rt_volumetric_fog_debug(vis_mode, rt_volumetric_fog_at(world_hit, rt_world_to_view(world_hit)));
 	} else if (vis_mode == RT_VIS_VOLUMETRIC_FOG_WORLD_GRID) {
 		ps.radiance = rt_fog_world_grid_debug(gl_WorldRayOriginEXT, gl_WorldRayDirectionEXT, gl_HitTEXT);
+	} else if (vis_mode == RT_VIS_VOLUMETRIC_FOG_COLLISIONS) {
+		ps.radiance = rt_fog_world_grid_collisions_debug(gl_WorldRayOriginEXT, gl_WorldRayDirectionEXT, gl_HitTEXT, ps.rng_state);
 	} else if (vis_mode == 22) {
 		// BRDF below-hemisphere fallback visualization. Reflects the two-layer
 		// recovery applied in shade_and_bounce:

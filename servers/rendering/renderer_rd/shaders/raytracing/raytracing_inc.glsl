@@ -68,6 +68,12 @@
 #define RT_VIS_CLUSTERS 32
 #define RT_VIS_CLUSTER_GROUPS 33
 
+// Blue at 0, through cyan, green and yellow, to red at 1.
+vec3 debug_heat_color(float p_t) {
+	float t = clamp(p_t, 0.0, 1.0) * 4.0;
+	return clamp(vec3(t - 2.0, t < 2.0 ? t : 4.0 - t, 2.0 - t), 0.0, 1.0);
+}
+
 // The unshaded views of geometry traced from clusters, drawn on black.
 bool rt_debug_is_cluster_mode(int p_vis_mode) {
 	return p_vis_mode >= RT_VIS_CLUSTER_TRIANGLES && p_vis_mode <= RT_VIS_CLUSTER_GROUPS;

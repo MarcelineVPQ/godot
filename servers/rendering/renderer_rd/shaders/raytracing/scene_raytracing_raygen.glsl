@@ -360,10 +360,17 @@ void main() {
 
 			// Free flight through the medium: a real collision before the first surface ends the segment there. The
 			// primary segment of sample 0 still traces up to the surface, which writes depth and guides every frame.
+			// Russian roulette in the walk weighs everything after it, from this segment on.
 			float ray_length = length(ray_dir);
 			vec3 unit_dir = ray_dir / ray_length;
 			float medium_t = 0.0;
-			bool medium_collision = medium_enabled && rt_fog_world_grid_sample_collision(ray_origin, unit_dir, t_far * ray_length, ps.rng_state, medium_t);
+			bool medium_collision = false;
+			float medium_weight = 1.0;
+			if (medium_enabled) {
+				medium_weight = rt_fog_world_grid_free_flight(ray_origin, unit_dir, t_far * ray_length, ps.rng_state, medium_collision, medium_t);
+				ps.throughput *= medium_weight;
+				throughput_entry = ps.throughput;
+			}
 			medium_t /= ray_length;
 			bool primary_guides = bounce == 0u && sample_idx == 0u;
 			float t_max = t_far;
@@ -385,6 +392,10 @@ void main() {
 
 			ps = path_unpack(payload);
 			ps.packed_bounces_flags &= ~MEDIUM_BOUNDED_RAY_FLAG;
+			if (medium_weight == 0.0) {
+				// The walk was ended: nothing after it adds light. The trace still wrote the guides.
+				ps.packed_bounces_flags = set_path_terminated(ps.packed_bounces_flags);
+			}
 			if (medium_enabled && primary_guides &&
 					rt_medium_write_primary_guides(ray_origin, unit_dir, (ps.hit_t >= 0.0 ? ps.hit_t : t_far) * ray_length)) {
 				// The fog stands in for the surface, so no mirror replaces its guides.
@@ -757,6 +768,8 @@ void main() {
 			ps.radiance = rt_volumetric_fog_debug(VIS_MODE, rt_volumetric_fog_sky_sample(project_uv(far_world, curr_vp_unjittered)));
 		} else if (VIS_MODE == RT_VIS_VOLUMETRIC_FOG_WORLD_GRID) {
 			ps.radiance = rt_fog_world_grid_debug(gl_WorldRayOriginEXT, gl_WorldRayDirectionEXT, gl_RayTmaxEXT);
+		} else if (VIS_MODE == RT_VIS_VOLUMETRIC_FOG_COLLISIONS) {
+			ps.radiance = rt_fog_world_grid_collisions_debug(gl_WorldRayOriginEXT, gl_WorldRayDirectionEXT, gl_RayTmaxEXT, ps.rng_state);
 		} else if (rt_debug_is_cluster_mode(VIS_MODE)) {
 			ps.radiance = vec3(0.0);
 		} else if (VIS_MODE == 0) {
