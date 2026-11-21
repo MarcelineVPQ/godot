@@ -1115,6 +1115,7 @@ void SceneShaderForwardClustered::init(const String p_defines) {
 		actions.render_mode_defines["particle_trails"] = "#define USE_PARTICLE_TRAILS\n";
 		actions.render_mode_defines["depth_prepass_alpha"] = "#define USE_OPAQUE_PREPASS\n";
 		actions.render_mode_defines["blend_premul_alpha"] = "#define BLEND_PREMUL_ALPHA_USED\n";
+		actions.render_mode_defines["blend_mul"] = "#define BLEND_MUL_USED\n";
 		actions.render_mode_defines["billboard"] = "#define BILLBOARD_ENABLED\n";
 		actions.render_mode_defines["billboard_y"] = "#define BILLBOARD_FIXED_Y\n";
 		actions.render_mode_defines["billboard_particles"] = "#define BILLBOARD_PARTICLES\n";

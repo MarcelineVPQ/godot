@@ -3126,6 +3126,9 @@ void fragment_shader(in SceneData scene_data) {
 #ifdef BLEND_PREMUL_ALPHA_USED
 	frag_color.rgb *= volumetric_fog_alpha_transmittance; // Premultiplied blending adds the color regardless of alpha.
 #endif
+#ifdef BLEND_MUL_USED
+	frag_color.rgb = mix(vec3(1.0), frag_color.rgb, volumetric_fog_alpha_transmittance); // Multiply blending ignores alpha.
+#endif
 #endif //!FOG_DISABLED
 
 #if defined(PREMUL_ALPHA_USED) && !defined(MODE_RENDER_DEPTH)

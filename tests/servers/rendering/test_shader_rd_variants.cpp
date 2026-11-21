@@ -504,7 +504,7 @@ static void check_scene() {
 	const String optional_scene_defines = "\n#define USE_VERTEX_LIGHTING\n\n#define SPECULAR_OCCLUSION_DISABLED\n";
 	check<SceneForwardClusteredShaderRD>("scene_forward_clustered (vertex shading, no specular occlusion)", clustered_modes, scene_defines(true) + optional_scene_defines);
 	// Render-mode blend defines that change the color pass output: the plain color pass with each.
-	check<SceneForwardClusteredShaderRD>("scene_forward_clustered (blend modes)", { "\n#define BLEND_PREMUL_ALPHA_USED\n" }, scene_defines(true));
+	check<SceneForwardClusteredShaderRD>("scene_forward_clustered (blend modes)", { "\n#define BLEND_PREMUL_ALPHA_USED\n", "\n#define BLEND_MUL_USED\n" }, scene_defines(true));
 
 	// SceneShaderForwardMobile.
 	Vector<String> mobile_modes;
