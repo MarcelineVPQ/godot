@@ -593,6 +593,12 @@
 		<constant name="RT_DEBUG_VOLUMETRIC_FOG_COLLISIONS" value="34" enum="PathtracingDebugMode">
 			Displays how much work tracing light through the [FogVolume]s of the path tracer's world grid takes on the primary ray up to its first hit: the tentative collisions a shadow ray tests there, from blue (none) through green to red at 64 or more. White means the walk hit the safety cap of 4096 tentative collisions and was absorbed, which darkens the fog there. Needs [member ProjectSettings.rendering/pathtracing/volumetric_fog_world_grid_transport]; without it, everything is blue. Magenta means no grid is bound: path tracing or [member volumetric_fog_enabled] is off.
 		</constant>
+		<constant name="RT_DEBUG_CLUSTER_LOD_LEVEL" value="35" enum="PathtracingDebugMode">
+			Like [constant RT_DEBUG_CLUSTER_TRIANGLES], colored by each cluster's level of detail, from blue for the source mesh through cyan, green and yellow to red for the mesh's coarsest level. With [member ProjectSettings.rendering/pathtracing/cluster_geometry/lod] off, only the source mesh is traced, so traced clusters are blue.
+		</constant>
+		<constant name="RT_DEBUG_CLUSTER_ERROR" value="36" enum="PathtracingDebugMode">
+			Like [constant RT_DEBUG_CLUSTER_TRIANGLES], colored by each cluster's simplification error in pixels at the output resolution, seen from the camera position as level of detail measures it: blue for none, green for 1 pixel, red for 2 pixels or more. With [member ProjectSettings.rendering/pathtracing/cluster_geometry/lod] at its default threshold, traced clusters stay at or below green, 1 pixel; with it off, only the source mesh is traced, which has no error, so they are blue.
+		</constant>
 		<constant name="FOG_MODE_EXPONENTIAL" value="0" enum="FogMode">
 			Use a physically-based fog model defined primarily by fog density.
 		</constant>

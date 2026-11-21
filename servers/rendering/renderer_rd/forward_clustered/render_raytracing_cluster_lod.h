@@ -149,6 +149,9 @@ public:
 		uint32_t deferred = 0; // Instances over the budget this frame, which keep their cut.
 	};
 
+	// Pixels at output resolution per unit of world error, at unit distance for a perspective camera.
+	static float pixels_per_error(const RenderDataRD *p_render_data);
+
 	void initialize(bool p_enabled);
 	void finalize();
 	bool is_enabled() const { return enabled; }

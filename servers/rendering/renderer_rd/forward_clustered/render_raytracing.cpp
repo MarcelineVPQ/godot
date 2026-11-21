@@ -6122,6 +6122,9 @@ RID RenderRaytracing::update_uniform_set(RTViewportState *p_state, const RenderD
 		rt_ubo.params[SceneShaderRaytracing::RT_PARAM_DECAL_COUNT] = float(p_state->decal_count);
 		rt_ubo.params[SceneShaderRaytracing::RT_PARAM_DECAL_MODE] = float(GLOBAL_GET_CACHED(int, "rendering/pathtracing/decals"));
 		rt_ubo.params[SceneShaderRaytracing::RT_PARAM_TRANSPARENCY_DOMINANT_LAYER_ALPHA] = _rt_dominant_layer_alpha();
+		// The cluster error debug view measures like the LOD selection.
+		rt_ubo.params[SceneShaderRaytracing::RT_PARAM_CLUSTER_PIXELS_PER_ERROR] = RTClusterLodSelector::pixels_per_error(p_render_data);
+		rt_ubo.params[SceneShaderRaytracing::RT_PARAM_CLUSTER_ORTHOGRAPHIC] = p_render_data->scene_data->cam_projection.is_orthogonal() ? 1.0f : 0.0f;
 
 		// Unjittered VP for motion vectors (matches raster convention).
 		{

@@ -69,12 +69,16 @@
 #define RT_PARAM_FOG_GLOBAL_EMISSION_R 39 // rt_params[9].w - emitted radiance per meter over the density
 #define RT_PARAM_FOG_GLOBAL_EMISSION_G 40 // rt_params[10].x
 #define RT_PARAM_FOG_GLOBAL_EMISSION_B 41 // rt_params[10].y
+#define RT_PARAM_CLUSTER_PIXELS_PER_ERROR 42 // rt_params[10].z - pixels at output resolution per unit of error at unit distance (orthographic: anywhere)
+#define RT_PARAM_CLUSTER_ORTHOGRAPHIC 43 // rt_params[10].w - 1 for an orthographic camera
 // RT_PARAM_VIS_MODE values. Must match Environment::PathtracingDebugMode.
 #define RT_VIS_TRANSPARENCY_LAYERS 23
 #define RT_VIS_DYNAMIC_GEOMETRY 29
 #define RT_VIS_CLUSTER_TRIANGLES 31
 #define RT_VIS_CLUSTERS 32
 #define RT_VIS_CLUSTER_GROUPS 33
+#define RT_VIS_CLUSTER_LOD_LEVEL 35
+#define RT_VIS_CLUSTER_ERROR 36
 
 // Blue at 0, through cyan, green and yellow, to red at 1.
 vec3 debug_heat_color(float p_t) {
@@ -84,7 +88,7 @@ vec3 debug_heat_color(float p_t) {
 
 // The unshaded views of geometry traced from clusters, drawn on black.
 bool rt_debug_is_cluster_mode(int p_vis_mode) {
-	return p_vis_mode >= RT_VIS_CLUSTER_TRIANGLES && p_vis_mode <= RT_VIS_CLUSTER_GROUPS;
+	return (p_vis_mode >= RT_VIS_CLUSTER_TRIANGLES && p_vis_mode <= RT_VIS_CLUSTER_GROUPS) || p_vis_mode == RT_VIS_CLUSTER_LOD_LEVEL || p_vis_mode == RT_VIS_CLUSTER_ERROR;
 }
 
 // True when p_vis_mode traces transparency peels: normal shading, and the debug views that show transparent layers.

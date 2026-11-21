@@ -45,6 +45,13 @@ static void _free_rid_if_owned(RID &r_rid) {
 	r_rid = RID();
 }
 
+float RTClusterLodSelector::pixels_per_error(const RenderDataRD *p_render_data) {
+	if (!p_render_data->scene_data || p_render_data->render_buffers.is_null()) {
+		return 0.0f;
+	}
+	return p_render_data->scene_data->cam_projection.columns[1][1] * 0.5f * float(p_render_data->render_buffers->get_target_size().y);
+}
+
 void RTClusterLodSelector::initialize(bool p_enabled) {
 	enabled = p_enabled;
 	if (!enabled) {
@@ -80,10 +87,8 @@ void RTClusterLodSelector::begin_view(View &r_view, const RenderDataRD *p_render
 	r_view.camera = p_render_data->scene_data->cam_transform.origin;
 	r_view.orthographic = projection.is_orthogonal();
 	r_view.z_near = MAX(p_render_data->scene_data->z_near, 1e-6f);
-	// Pixels at output resolution per unit of error: at unit distance in perspective, anywhere in orthographic.
-	const float pixels_per_error = projection.columns[1][1] * 0.5f * float(p_render_data->render_buffers->get_target_size().y);
 	const float threshold = MAX(float(GLOBAL_GET_CACHED(double, "rendering/pathtracing/cluster_geometry/lod_error_threshold")), 0.01f);
-	r_view.pixel_scale = pixels_per_error * (1.0f + HYSTERESIS) / threshold;
+	r_view.pixel_scale = pixels_per_error(p_render_data) * (1.0f + HYSTERESIS) / threshold;
 }
 
 // Smallest and largest scale of p_basis along its axes; exact for rotations with scale, which instances use.

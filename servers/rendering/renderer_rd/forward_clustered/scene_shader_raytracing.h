@@ -165,6 +165,8 @@ public:
 	static constexpr int RT_PARAM_FOG_GLOBAL_EMISSION_R = 39;
 	static constexpr int RT_PARAM_FOG_GLOBAL_EMISSION_G = 40;
 	static constexpr int RT_PARAM_FOG_GLOBAL_EMISSION_B = 41;
+	static constexpr int RT_PARAM_CLUSTER_PIXELS_PER_ERROR = 42; // RTClusterLodSelector::pixels_per_error().
+	static constexpr int RT_PARAM_CLUSTER_ORTHOGRAPHIC = 43; // 1 for an orthographic camera.
 	// Which path vertices receive decals (rendering/pathtracing/decals). Must match RT_DECAL_MODE_* in GLSL.
 	enum RTDecalMode {
 		RT_DECAL_MODE_ALL_HITS = 0,
