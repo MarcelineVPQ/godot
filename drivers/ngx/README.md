@@ -13,8 +13,12 @@ the NVIDIA NGX SDK directly, through Vulkan. Windows builds are unchanged.
   the build stops and says so. `scons -c` and `--help` never download. For offline builds, put
   the files in `thirdparty/ngx/` yourself and add `fetch_ngx=no`.
 - The build links `libnvsdk_ngx.a` and copies `libnvidia-ngx-dlssd.so.310.9.16` (the Ray
-  Reconstruction library) into `bin/`. At runtime NGX loads it from the folder of the Godot
-  executable, so ship it next to the executable.
+  Reconstruction library) and NVIDIA's licence, as `NVIDIA_RTX_SDK_LICENSE.txt`, into `bin/`. At
+  runtime NGX loads the library from the folder of the Godot executable.
+- Exporting for Linux copies every `libnvidia-ngx-dlss*.so*` found next to the export template,
+  with `NVIDIA_RTX_SDK_LICENSE.txt`, next to the game, and writes `NVIDIA_NOTICE.txt`. So keep
+  those files next to export templates built with NGX; without the library, exported games run
+  without DLSS and say why.
 - `ngx_context.cpp` adds the Vulkan extensions NGX asks for, starts NGX on NVIDIA GPUs and checks
   that Ray Reconstruction is available. If it is not (another GPU vendor, an old driver, or the
   library missing), the path tracer runs without a denoiser and a warning says why.
@@ -45,7 +49,7 @@ without NGX (`use_ngx=no`), so they are MIT and NVIDIA-free. A build with NGX is
 ship a product, and its release checklist is:
 
 1. Ship `thirdparty/ngx/LICENSE.txt` and the notice "This software contains source code provided
-   by NVIDIA Corporation." with it.
+   by NVIDIA Corporation." with it (the Linux export does both).
 2. Notify NVIDIA before a commercial release (supplement section 4 of the licence:
    https://developer.nvidia.com/sw-notification, with company, publisher and developer, SDK,
    application name, platform, ship date and a link).

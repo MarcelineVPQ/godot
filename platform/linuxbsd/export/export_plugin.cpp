@@ -61,6 +61,40 @@ Error EditorExportPlatformLinuxBSD::_export_debug_script(const Ref<EditorExportP
 	return OK;
 }
 
+// Templates built with use_ngx=yes load NVIDIA's DLSS libraries from the executable's folder, so the libraries next to
+// the template go next to the game, with the NVIDIA licence and notice they must ship with.
+void EditorExportPlatformLinuxBSD::_export_ngx_libraries(const String &p_template_path, const String &p_dest_dir) {
+	const String template_dir = p_template_path.get_base_dir();
+	if (template_dir.is_empty()) {
+		return;
+	}
+	Ref<DirAccess> template_da = DirAccess::open(template_dir);
+	if (template_da.is_null()) {
+		return;
+	}
+	bool copied = false;
+	for (const String &file : template_da->get_files()) {
+		if (file.begins_with("libnvidia-ngx-dlss") && file.contains(".so")) {
+			template_da->copy(template_dir.path_join(file), p_dest_dir.path_join(file), get_chmod_flags());
+			copied = true;
+		}
+	}
+	if (!copied) {
+		return;
+	}
+	const String license_file = "NVIDIA_RTX_SDK_LICENSE.txt";
+	if (template_da->file_exists(license_file)) {
+		template_da->copy(template_dir.path_join(license_file), p_dest_dir.path_join(license_file));
+	} else {
+		add_message(EXPORT_MESSAGE_WARNING, TTR("DLSS"), vformat(TTR("NVIDIA's DLSS libraries were exported, but \"%s\" is missing next to the export template. It must ship with them: copy it from the engine build's \"bin\" folder."), license_file));
+	}
+	Ref<FileAccess> notice = FileAccess::open(p_dest_dir.path_join("NVIDIA_NOTICE.txt"), FileAccess::WRITE);
+	if (notice.is_valid()) {
+		notice->store_line("This software contains source code provided by NVIDIA Corporation.");
+		notice->store_line("NVIDIA's DLSS libraries (libnvidia-ngx-dlss*.so) are distributed under the NVIDIA RTX SDKs License in " + license_file + ".");
+	}
+}
+
 Error EditorExportPlatformLinuxBSD::export_project(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, BitField<EditorExportPlatform::DebugFlags> p_flags, bool p_notify) {
 	String custom_debug = p_preset->get("custom_template/debug");
 	String custom_release = p_preset->get("custom_template/release");
@@ -118,6 +152,8 @@ Error EditorExportPlatformLinuxBSD::export_project(const Ref<EditorExportPreset>
 		// Message is supplied by the subroutine method.
 		return err;
 	}
+
+	_export_ngx_libraries(template_path.is_empty() ? find_export_template(get_template_file_name(p_debug ? "debug" : "release", arch)) : template_path, path.get_base_dir());
 
 	// Save console wrapper.
 	int con_scr = p_preset->get("debug/export_console_wrapper");

@@ -688,9 +688,12 @@ if env["use_ngx"]:
         # NGX loads the DLSS libraries at runtime from the executable's folder.
         import shutil
 
+        # Their licence goes with them; the Linux export copies both next to the game.
         os.makedirs("bin", exist_ok=True)
         if not os.path.isfile(os.path.join("bin", ngx_dlssd_library)):
             shutil.copy2(os.path.join(ngx_dir, "lib/Linux_x86_64/rel", ngx_dlssd_library), "bin")
+        if not os.path.isfile(os.path.join("bin", "NVIDIA_RTX_SDK_LICENSE.txt")):
+            shutil.copy2(os.path.join(ngx_dir, "LICENSE.txt"), os.path.join("bin", "NVIDIA_RTX_SDK_LICENSE.txt"))
 
     env.AppendUnique(CPPDEFINES=["NGX_ENABLED"])
 

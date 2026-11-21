@@ -68,6 +68,7 @@ class EditorExportPlatformLinuxBSD : public EditorExportPlatformPC {
 
 	Error _export_debug_script(const Ref<EditorExportPreset> &p_preset, const String &p_app_name, const String &p_pkg_name, const String &p_path);
 	String _get_exe_arch(const String &p_path) const;
+	void _export_ngx_libraries(const String &p_template_path, const String &p_dest_dir);
 
 public:
 	virtual void get_export_options(List<ExportOption> *r_options) const override;
