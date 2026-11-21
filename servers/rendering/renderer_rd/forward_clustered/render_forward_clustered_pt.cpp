@@ -863,6 +863,10 @@ void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
 
 	RendererRD::Fog::get_singleton()->volumetric_fog_world_grid_update(rb.ptr(), p_render_data->scene_data->cam_transform, time, *p_render_data->fog_volumes);
+	// With light transport through the world grid, FogVolumes are traced there only. The froxels keep the
+	// Environment's global fog, which the grid doesn't hold, for camera segments.
+	const bool world_grid_transport = GLOBAL_GET_CACHED(bool, "rendering/pathtracing/volumetric_fog_world_grid_transport") && RendererRD::Fog::get_active_world_grid(rb.ptr(), p_render_data->environment).is_valid();
+	const PagedArray<RID> no_fog_volumes;
 
 	// Shadow maps aren't rendered when path tracing, so there is no raster fallback.
 	RendererRD::Fog::VolumetricFogRayQueryShadows ray_query_shadows;
@@ -873,7 +877,7 @@ void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_
 
 	gi.setup_voxel_gi_instances(p_render_data, rb, p_render_data->scene_data->cam_transform, *p_render_data->voxel_gi_instances, p_render_data->voxel_gi_count);
 
-	_update_volumetric_fog(rb, p_render_data->environment, p_render_data->scene_data->cam_projection, p_render_data->scene_data->cam_transform, p_render_data->scene_data->prev_cam_transform.affine_inverse(), RID(), p_directional_light_count, false, p_positional_light_count, p_render_data->voxel_gi_count, *p_render_data->fog_volumes, &ray_query_shadows);
+	_update_volumetric_fog(rb, p_render_data->environment, p_render_data->scene_data->cam_projection, p_render_data->scene_data->cam_transform, p_render_data->scene_data->prev_cam_transform.affine_inverse(), RID(), p_directional_light_count, false, p_positional_light_count, p_render_data->voxel_gi_count, world_grid_transport ? no_fog_volumes : *p_render_data->fog_volumes, &ray_query_shadows);
 }
 
 void RenderForwardClusteredPT::_age_out_motion_vectors(const RenderDataRD *p_render_data) {

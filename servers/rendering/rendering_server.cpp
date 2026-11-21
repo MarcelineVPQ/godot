@@ -3883,6 +3883,7 @@ void RenderingServer::init() {
 	GLOBAL_DEF("rendering/pathtracing/volumetric_fog_shadows", true);
 	GLOBAL_DEF(PropertyInfo(Variant::VECTOR3, "rendering/pathtracing/volumetric_fog_world_grid_size", PROPERTY_HINT_NONE, "suffix:m"), Vector3(48, 24, 48));
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/pathtracing/volumetric_fog_world_grid_voxel_size", PROPERTY_HINT_RANGE, "0.05,4,0.01,or_greater,suffix:m"), 0.25);
+	GLOBAL_DEF("rendering/pathtracing/volumetric_fog_world_grid_transport", true);
 	// Decal budget; 0 compiles decals out of the RT pipeline. Changing between 0 and non-zero swaps pipelines.
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/pathtracing/max_decals", PROPERTY_HINT_RANGE, "0,65536,1"), 1024);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/pathtracing/decals", PROPERTY_HINT_ENUM, "All Hits,Skip After Diffuse,Singular Only"), 0);

@@ -34,8 +34,8 @@ struct RTLightPacked {
 	uint orientation_xy; // snorm16 quaternion x, y.
 	uint orientation_zw; // snorm16 quaternion z, w.
 	uint projector_texture; // index : 24, unused : 8.
-	uint reserved0; // Free for future fields, keeps the 64-byte stride.
-	uint reserved1;
+	uint volumetric_fog; // fp16 volumetric fog energy, unused.
+	uint reserved1; // Free for future fields, keeps the 64-byte stride.
 	uint reserved2;
 };
 
@@ -55,6 +55,7 @@ struct RTLightData {
 	uint light_masks; // Bits 0-19: light_cull_mask (lighting test). Bits 24-31: TLAS shadow-ray mask.
 	uint projector_texture; // Bindless sRGB index, RT_LIGHT_NO_PROJECTOR when unset.
 	vec4 orientation; // Unit rotation quaternion (omni/spot); the spot cone points along local -Z.
+	float volumetric_fog_energy; // Scales the light in path-traced FogVolumes.
 };
 
 // Light buffer SSBO (binding provided by the including shader via RT_LIGHT_BUFFER_BINDING).
@@ -95,6 +96,7 @@ RTLightData lights_get(uint idx) {
 	light.projector_texture = bitfieldExtract(p.projector_texture, 0, 24);
 	vec4 q = vec4(unpackSnorm2x16(p.orientation_xy), unpackSnorm2x16(p.orientation_zw));
 	light.orientation = q * inversesqrt(max(dot(q, q), 1e-8));
+	light.volumetric_fog_energy = unpackHalf2x16(p.volumetric_fog).x;
 	return light;
 }
 
@@ -240,6 +242,7 @@ vec3 lights_projector_color(RTLightData light, vec3 p_dir) {
 	return projector.rgb * projector.a;
 }
 
+#include "raytracing_fog_world_grid_inc.glsl"
 #include "raytracing_shadow_query_inc.glsl"
 
 // ============================================================================
@@ -309,14 +312,20 @@ vec3 lights_trace_shadow_ray(vec3 origin, vec3 direction, float max_dist, uint p
 #endif
 }
 
-// Shadow transmittance from origin towards the light, blended towards 1 by the light's shadow opacity.
-// Skips the trace when the path tracer draws no shadow for this light. p_receiver_shadow_mask filters the light's caster groups.
+// Shadow transmittance from origin towards the light, blended towards 1 by the light's shadow opacity, times the
+// transmittance of the fog world grid's medium. Skips the trace when the path tracer draws no shadow for this light;
+// the medium still dims it, as that is the light's own path rather than a shadow. p_receiver_shadow_mask filters the
+// light's caster groups.
 vec3 lights_shadow_transmittance(RTLightData light, vec3 origin, vec3 direction, float max_dist, uint p_receiver_shadow_mask, inout uint rng_state) {
-	if (light.shadow_opacity <= 0.001) {
-		return vec3(1.0);
+	vec3 transmittance = vec3(1.0);
+	if (light.shadow_opacity > 0.001) {
+		vec3 traced = lights_trace_shadow_ray(origin, direction, max_dist, (light.light_masks >> 24u) & p_receiver_shadow_mask, rng_state);
+		transmittance = mix(vec3(1.0), traced, light.shadow_opacity);
 	}
-	vec3 traced = lights_trace_shadow_ray(origin, direction, max_dist, (light.light_masks >> 24u) & p_receiver_shadow_mask, rng_state);
-	return mix(vec3(1.0), traced, light.shadow_opacity);
+	if (rt_fog_world_grid_transport_enabled() && any(greaterThan(transmittance, vec3(0.0)))) {
+		transmittance *= rt_fog_world_grid_transmittance(origin, direction, max_dist, rng_state);
+	}
+	return transmittance;
 }
 
 // ============================================================================
@@ -378,43 +387,45 @@ bool lights_select(vec3 hit_pos, uint first, uint count, uint instance_layers, i
 	return true;
 }
 
-// Unweighted contribution of one omni or spot light, one shadow ray.
-vec3 lights_evaluate_positional(RTLightData light, vec3 hit_pos, vec3 N, vec3 V, MaterialProperties material,
-		inout uint rng_state, bool is_indirect_bounce, uint p_receiver_shadow_mask) {
+// Samples a direction r_L from hit_pos to an omni or spot light and the distance r_shadow_dist to its surface. r_light is
+// the light arriving from it before shadowing: emission, projector, spot cone and distance attenuation. False when the
+// light can't reach hit_pos.
+bool lights_sample_positional(RTLightData light, vec3 hit_pos, inout uint rng_state, out vec3 r_L, out float r_shadow_dist, out vec3 r_light) {
 	vec3 to_light = light.position - hit_pos;
 	float dist_sq = dot(to_light, to_light);
+	r_L = vec3(0.0, 0.0, 1.0);
+	r_shadow_dist = 0.0;
+	r_light = vec3(0.0);
 
 	// Early out: outside max range.
 	if (light.max_range_squared != 0.0 && dist_sq > light.max_range_squared) {
-		return vec3(0.0);
+		return false;
 	}
 
 	float dist = sqrt(dist_sq);
-	vec3 L;
-	float shadow_dist;
 
 	if (light.radius <= 0.01) {
 		// True point light: exact direction.
-		L = to_light / max(dist, 0.0001);
-		shadow_dist = dist;
+		r_L = to_light / max(dist, 0.0001);
+		r_shadow_dist = dist;
 	} else {
 		// Sphere light: cone sampling for soft shadows.
 		LightSample ls = lights_prepare_sample(hit_pos, light);
 		float light_pdf;
-		L = lights_sample_cone(ls, rand2(rng_state), light_pdf);
-		float t_center = dot(to_light, L);
-		vec3 perp = to_light - t_center * L;
+		r_L = lights_sample_cone(ls, rand2(rng_state), light_pdf);
+		float t_center = dot(to_light, r_L);
+		vec3 perp = to_light - t_center * r_L;
 		float perp_sq = dot(perp, perp);
 		float dt = sqrt(max(0.0, light.radius * light.radius - perp_sq));
-		shadow_dist = max(0.0, t_center - dt);
+		r_shadow_dist = max(0.0, t_center - dt);
 	}
 
 	// Spot cone early-out.
 	float spot_atten = 1.0;
 	if (light.type == RT_LIGHT_TYPE_SPOT) {
-		float one_minus_scos = 1.0 + dot(L, lights_rotate(light.orientation, vec3(0.0, 0.0, -1.0)));
+		float one_minus_scos = 1.0 + dot(r_L, lights_rotate(light.orientation, vec3(0.0, 0.0, -1.0)));
 		if (one_minus_scos >= light.one_minus_cos_spot) {
-			return vec3(0.0);
+			return false;
 		}
 		float spot_rim = max(1e-4, one_minus_scos / light.one_minus_cos_spot);
 		spot_atten = 1.0 - pow(spot_rim, light.inv_spot_attenuation);
@@ -423,6 +434,25 @@ vec3 lights_evaluate_positional(RTLightData light, vec3 hit_pos, vec3 N, vec3 V,
 	// From the light center, as in raster, so area lights keep a sharp projection.
 	vec3 projector_color = lights_projector_color(light, -to_light / max(dist, 0.0001));
 	if (all(lessThanEqual(projector_color, vec3(0.0)))) {
+		return false;
+	}
+
+	// Distance attenuation.
+	LightSample ls_atten;
+	ls_atten.distance_sq = dist_sq;
+	float atten = lights_get_attenuation(ls_atten, light.inv_max_range, light.attenuation) * spot_atten;
+
+	r_light = light.emission * projector_color * atten;
+	return true;
+}
+
+// Unweighted contribution of one omni or spot light, one shadow ray.
+vec3 lights_evaluate_positional(RTLightData light, vec3 hit_pos, vec3 N, vec3 V, MaterialProperties material,
+		inout uint rng_state, bool is_indirect_bounce, uint p_receiver_shadow_mask) {
+	vec3 L;
+	float shadow_dist;
+	vec3 incoming;
+	if (!lights_sample_positional(light, hit_pos, rng_state, L, shadow_dist, incoming)) {
 		return vec3(0.0);
 	}
 
@@ -432,18 +462,13 @@ vec3 lights_evaluate_positional(RTLightData light, vec3 hit_pos, vec3 N, vec3 V,
 	vec3 brdf_diffuse, brdf_specular;
 	evalCombinedBRDFSeparate(N, L, V, material, brdf_diffuse, brdf_specular);
 
-	// Distance attenuation.
-	LightSample ls_atten;
-	ls_atten.distance_sq = dist_sq;
-	float atten = lights_get_attenuation(ls_atten, light.inv_max_range, light.attenuation) * spot_atten;
-
 	float spec_mul = lights_get_specular_multiplier(light.specular_amount, material.roughness);
 	vec3 brdf_value = brdf_diffuse + brdf_specular * spec_mul;
 
 	float indirect_mul = is_indirect_bounce ? light.indirect_energy : 1.0;
 
 	// NdotL is already included in brdf_value.
-	return brdf_value * light.emission * projector_color * shadow_transmittance * atten * indirect_mul;
+	return brdf_value * incoming * shadow_transmittance * indirect_mul;
 }
 
 // Unweighted contribution of one directional light, one shadow ray.

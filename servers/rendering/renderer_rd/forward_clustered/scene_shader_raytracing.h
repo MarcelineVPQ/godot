@@ -114,7 +114,7 @@ public:
 	constexpr static uint32_t RT_MAX_RECURSION_DEPTH = 2;
 
 	// Size of the float params buffer, injected into the RT shaders as RT_PARAM_COUNT.
-	static constexpr int RT_PARAM_COUNT = 28;
+	static constexpr int RT_PARAM_COUNT = 36;
 	static_assert(RT_PARAM_COUNT % 4 == 0, "rt_params is a std140 vec4 array.");
 
 	// Pathtracing parameter indices for the params buffer.
@@ -148,6 +148,13 @@ public:
 	static constexpr int RT_PARAM_FOG_WORLD_GRID_ORIGIN_Y = 24;
 	static constexpr int RT_PARAM_FOG_WORLD_GRID_ORIGIN_Z = 25;
 	static constexpr int RT_PARAM_FOG_WORLD_GRID_VOXEL_SIZE = 26; // 0 = no world grid.
+	static constexpr int RT_PARAM_FOG_WORLD_GRID_ANISOTROPY = 27;
+	static constexpr int RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_X = 28; // Fog::VolumetricFogWorldGrid::occupied_min, empty = no light transport.
+	static constexpr int RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_Y = 29;
+	static constexpr int RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_Z = 30;
+	static constexpr int RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_X = 31; // Fog::VolumetricFogWorldGrid::occupied_max.
+	static constexpr int RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Y = 32;
+	static constexpr int RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Z = 33;
 	// Which path vertices receive decals (rendering/pathtracing/decals). Must match RT_DECAL_MODE_* in GLSL.
 	enum RTDecalMode {
 		RT_DECAL_MODE_ALL_HITS = 0,

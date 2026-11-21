@@ -47,6 +47,13 @@
 #define RT_PARAM_FOG_WORLD_GRID_ORIGIN_Y 24 // rt_params[6].x
 #define RT_PARAM_FOG_WORLD_GRID_ORIGIN_Z 25 // rt_params[6].y
 #define RT_PARAM_FOG_WORLD_GRID_VOXEL_SIZE 26 // rt_params[6].z - 0 = no world grid
+#define RT_PARAM_FOG_WORLD_GRID_ANISOTROPY 27 // rt_params[6].w - Henyey-Greenstein g of the medium (volumetric_fog_anisotropy)
+#define RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_X 28 // rt_params[7].x - voxel box holding this frame's FogVolumes, empty = no light transport
+#define RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_Y 29 // rt_params[7].y
+#define RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_Z 30 // rt_params[7].z
+#define RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_X 31 // rt_params[7].w
+#define RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Y 32 // rt_params[8].x
+#define RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Z 33 // rt_params[8].y
 // RT_PARAM_VIS_MODE values. Must match Environment::PathtracingDebugMode.
 #define RT_VIS_TRANSPARENCY_LAYERS 23
 #define RT_VIS_DYNAMIC_GEOMETRY 29
@@ -146,7 +153,7 @@ float payload_peel_scene_depth(PathPayload p) {
 }
 
 // Bounce count helpers. Bits 0-3: total, must hold RT_MAX_BOUNCES_LIMIT; bits 4-6: diffuse, must hold MAX_DIFFUSE_BOUNCES.
-// Bit 7: PEEL_SCENE_DEPTH_FLAG. Bit 8: LAST_BOUNCE_DIFFUSE_FLAG. Bits 9-13: DLSS-RR guide rays and replacement. Bit 14 is reserved.
+// Bit 7: PEEL_SCENE_DEPTH_FLAG. Bit 8: LAST_BOUNCE_DIFFUSE_FLAG. Bits 9-13: DLSS-RR guide rays and replacement. Bit 14: MEDIUM_BOUNDED_RAY_FLAG.
 uint get_total_bounces(uint packed) {
 	return packed & 0xFu;
 }
@@ -182,6 +189,10 @@ const uint GUIDE_MIRROR_FLAG = (1u << 12); //!< Hit output: replaceable mirror, 
 // Set by a replaceable primary mirror; the path's next singular hit writes the replacement and clears it.
 // Still set after that bounce, raygen falls back to a guide ray walk.
 const uint DLSS_RR_REPLACE_PENDING_FLAG = (1u << 13);
+
+// Raygen ended this trace at a sampled collision with the fog world grid's medium, so a miss means no surface came
+// first, not the sky.
+const uint MEDIUM_BOUNDED_RAY_FLAG = (1u << 14);
 
 // Sample 0 flag (bit 24) - only write DLSS RR outputs on first sample
 const uint SAMPLE_ZERO_FLAG = (1u << 24);

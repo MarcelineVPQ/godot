@@ -28,6 +28,11 @@ void store_path_timing(ivec2 pixel, uvec2 start_clock) {
 
 #pragma shader_stage(raygen)
 #extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_ray_query : enable
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_ARB_gpu_shader_int64 : require
+#extension GL_EXT_nonuniform_qualifier : require
 #ifdef USE_SER
 #extension GL_EXT_shader_invocation_reorder : enable
 #endif
@@ -44,6 +49,25 @@ layout(set = 0, binding = 29) uniform texture2D prepass_depth_texture;
 layout(set = 0, binding = 30) uniform texture2D prepass_color_texture;
 
 layout(location = 0) rayPayloadEXT PathPayload payload;
+
+// Light sampling for scatter events in the fog world grid's medium.
+// clang-format off
+#include "brdf_inc.glsl"
+#include "raytracing_hit_inc.glsl"
+
+layout(set = 1, binding = 0) uniform texture2D bindless_textures[];
+
+layout(set = 0, binding = 3, std430) readonly buffer GeometryBuffer {
+	GeometryData geometries[];
+};
+
+layout(set = 0, binding = 5, std430) readonly buffer MaterialBuffer {
+	MaterialData materials[];
+};
+
+#include "raytracing_entry_material_inc.glsl"
+#include "raytracing_lights_inc.glsl"
+// clang-format on
 
 struct ContinuationReservoir {
 	PathState selected;
@@ -149,6 +173,105 @@ void dlss_rr_replace_primary_surface(vec3 p_origin, vec3 p_dir, float p_hit_t) {
 }
 #endif // DLSS_RR_ENABLED
 
+// ============================================================================
+// PARTICIPATING MEDIUM (fog world grid)
+// ============================================================================
+
+// Henyey-Greenstein phase function, as in the rasterizer's fog. p_cos is between the direction towards the light and
+// the direction of the view ray.
+float rt_medium_phase(float p_cos, float p_g) {
+	const float k = 0.0795774715459; // 1 / (4 * PI)
+	return k * (1.0 - p_g * p_g) / pow(max(1.0 + p_g * p_g - 2.0 * p_g * p_cos, 1e-6), 1.5);
+}
+
+// Direction around the unit p_dir distributed by the Henyey-Greenstein phase function, so its value and pdf cancel.
+vec3 rt_medium_sample_phase(vec3 p_dir, float p_g, vec2 p_u) {
+	float cos_theta;
+	if (abs(p_g) < 1e-3) {
+		cos_theta = 1.0 - 2.0 * p_u.x;
+	} else {
+		float s = (1.0 - p_g * p_g) / (1.0 - p_g + 2.0 * p_g * p_u.x);
+		cos_theta = clamp((1.0 + p_g * p_g - s * s) / (2.0 * p_g), -1.0, 1.0);
+	}
+	float sin_theta = sqrt(max(0.0, 1.0 - cos_theta * cos_theta));
+	float phi = 2.0 * PI * p_u.y;
+	return normalize(lights_local_to_world(vec3(sin_theta * cos(phi), sin_theta * sin(phi), cos_theta), p_dir));
+}
+
+// Light from p_light scattered at p_pos into the unit view ray p_dir, through one shadow ray that the medium dims too.
+vec3 rt_medium_light(RTLightData p_light, vec3 p_pos, vec3 p_dir, float p_g, bool p_indirect, inout uint r_rng) {
+	vec3 L;
+	float shadow_dist;
+	vec3 incoming;
+	if (p_light.type == RT_LIGHT_TYPE_DIRECTIONAL) {
+		LightSample ls = lights_prepare_sample(p_pos, p_light);
+		float light_pdf;
+		L = lights_sample_cone(ls, rand2(r_rng), light_pdf);
+		shadow_dist = ls.max_distance;
+		incoming = p_light.emission;
+	} else if (!lights_sample_positional(p_light, p_pos, r_rng, L, shadow_dist, incoming)) {
+		return vec3(0.0);
+	}
+	// The medium is shadowed like a surface that isn't SELF_SHADOWING.
+	uint receiver_shadow_mask = ~uint(get_rt_param(RT_PARAM_SELF_SHADOW_MASK)) & 0xFFu;
+	vec3 shadow = lights_shadow_transmittance(p_light, p_pos, L, shadow_dist, receiver_shadow_mask, r_rng);
+	float energy = p_light.volumetric_fog_energy * (p_indirect ? p_light.indirect_energy : 1.0);
+	return incoming * shadow * rt_medium_phase(dot(L, p_dir), p_g) * energy;
+}
+
+// A real collision with the medium at p_pos on the unit view ray p_dir, p_t along the traced ray: its emission and the
+// light of one light scatter towards the path, which then continues in a phase-sampled direction while it may bounce.
+// Like a diffuse bounce, it makes later light indirect.
+void rt_medium_scatter(inout PathState r_ps, vec3 p_pos, vec3 p_dir, float p_t) {
+	RTFogWorldGridSample medium = rt_fog_world_grid_sample(p_pos);
+	float g = get_rt_param(RT_PARAM_FOG_WORLD_GRID_ANISOTROPY);
+	uint diffuse_bounces = get_diffuse_bounces(r_ps.packed_bounces_flags);
+
+	// Emission is a source per meter, so a collision scores it over the extinction.
+	r_ps.radiance += r_ps.throughput * medium.emission / max(medium.extinction, 1e-4);
+
+	uint light_index;
+	float select_pdf;
+	if (lights_select(p_pos, 0u, uint(get_rt_param(RT_PARAM_LIGHT_COUNT)), 0xFFFFFu, r_ps.rng_state, light_index, select_pdf)) {
+		vec3 light = rt_medium_light(lights_get(light_index), p_pos, p_dir, g, diffuse_bounces > 0u, r_ps.rng_state);
+		r_ps.radiance += r_ps.throughput * medium.albedo * light / max(select_pdf, 1e-10);
+	}
+
+	r_ps.hit_t = p_t;
+	if (get_total_bounces(r_ps.packed_bounces_flags) >= RT_GET_MAX_BOUNCES()) {
+		r_ps.packed_bounces_flags = set_path_terminated(r_ps.packed_bounces_flags);
+		return;
+	}
+	// Surfaces stop sampling diffuse bounces at MAX_DIFFUSE_BOUNCES; the medium keeps scattering up to the bounce limit.
+	uint bounced = diffuse_bounces < MAX_DIFFUSE_BOUNCES ? inc_diffuse_bounce(r_ps.packed_bounces_flags) : inc_total_bounce(r_ps.packed_bounces_flags);
+	r_ps.packed_bounces_flags = bounced | LAST_BOUNCE_DIFFUSE_FLAG | NON_SINGULAR_PATH_FLAG;
+	r_ps.throughput *= medium.albedo;
+	r_ps.next_ray_dir = rt_medium_sample_phase(p_dir, g, rand2(r_ps.rng_state));
+	r_ps.offset_normal = r_ps.next_ray_dir;
+}
+
+// Where the medium hides most of what's behind, the primary ray's depth, motion and DLSS-RR guides become those of the
+// fog at the point where its transmittance falls to one half, facing the camera. Unlike the scatter events, that point
+// doesn't change with the samples, so the guides don't flicker. p_dir is unit, p_t_end in meters. Returns true if it wrote.
+bool rt_medium_write_primary_guides(vec3 p_origin, vec3 p_dir, float p_t_end) {
+	float t_half;
+	rt_fog_world_grid_march(p_origin, p_dir, p_t_end, rt_fog_world_grid_occupied_min(), rt_fog_world_grid_occupied_max(), 0.693147, t_half);
+	if (t_half < 0.0) {
+		return false;
+	}
+	vec3 pos = p_origin + p_dir * t_half;
+	ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+	vec2 motion = rt_motion_vector(pos, pos);
+	imageStore(rt_depth_image, pixel, vec4(rt_ndc_depth(pos)));
+	imageStore(rt_velocity_image, pixel, vec4(motion, 0.0, 0.0));
+#ifdef DLSS_RR_ENABLED
+	dlss_rr_write_specular_motion_vector(motion);
+	dlss_rr_write_albedo_guides(rt_fog_world_grid_sample(pos).albedo, vec3(0.0));
+	imageStore(dlss_rr_normal_roughness, pixel, vec4(-p_dir, 1.0));
+#endif
+	return true;
+}
+
 void main() {
 #ifdef RT_TIMING_ENABLED
 	uvec2 start_clock = clockRealtime2x32EXT();
@@ -201,6 +324,11 @@ void main() {
 
 	const uint max_bounces = RT_GET_MAX_BOUNCES();
 
+	bool medium_enabled = rt_fog_world_grid_transport_enabled();
+#ifdef RT_DEBUG_ENABLED
+	medium_enabled = medium_enabled && int(get_rt_param(RT_PARAM_VIS_MODE)) == 0;
+#endif
+
 	// TODO: when we have a spp > 0 the first raycast is always identical,
 	// we should move it out of the loop
 
@@ -228,20 +356,47 @@ void main() {
 			vec3 throughput_entry = ps.throughput;
 			vec3 radiance_pre = ps.radiance;
 			uint flags_entry = ps.packed_bounces_flags;
+			float t_far = (bounce == 0u) ? composite_t_max : 10000.0;
+
+			// Free flight through the medium: a real collision before the first surface ends the segment there. The
+			// primary segment of sample 0 still traces up to the surface, which writes depth and guides every frame.
+			float ray_length = length(ray_dir);
+			vec3 unit_dir = ray_dir / ray_length;
+			float medium_t = 0.0;
+			bool medium_collision = medium_enabled && rt_fog_world_grid_sample_collision(ray_origin, unit_dir, t_far * ray_length, ps.rng_state, medium_t);
+			medium_t /= ray_length;
+			bool primary_guides = bounce == 0u && sample_idx == 0u;
+			float t_max = t_far;
+			if (medium_collision && !primary_guides) {
+				t_max = medium_t;
+				ps.packed_bounces_flags |= MEDIUM_BOUNDED_RAY_FLAG;
+			}
 			ps.hit_t = -1.0; // A miss must not retain the previous segment's hit distance.
 			path_pack(payload, ps);
-			float t_far = (bounce == 0u) ? composite_t_max : 10000.0;
 
 #ifdef USE_SER
 			hitObjectEXT hitObject;
-			hitObjectTraceRayEXT(hitObject, tlas, RT_RAY_FLAGS, RT_VIS_MASK, 0, 0, 0, ray_origin, 0.001, ray_dir, t_far, 0);
+			hitObjectTraceRayEXT(hitObject, tlas, RT_RAY_FLAGS, RT_VIS_MASK, 0, 0, 0, ray_origin, 0.001, ray_dir, t_max, 0);
 			reorderThreadEXT(hitObject);
 			hitObjectExecuteShaderEXT(hitObject, 0);
 #else
-			traceRayEXT(tlas, RT_RAY_FLAGS, RT_VIS_MASK, 0, 0, 0, ray_origin, 0.001, ray_dir, t_far, 0);
+			traceRayEXT(tlas, RT_RAY_FLAGS, RT_VIS_MASK, 0, 0, 0, ray_origin, 0.001, ray_dir, t_max, 0);
 #endif
 
 			ps = path_unpack(payload);
+			ps.packed_bounces_flags &= ~MEDIUM_BOUNDED_RAY_FLAG;
+			if (medium_enabled && primary_guides &&
+					rt_medium_write_primary_guides(ray_origin, unit_dir, (ps.hit_t >= 0.0 ? ps.hit_t : t_far) * ray_length)) {
+				// The fog stands in for the surface, so no mirror replaces its guides.
+				ps.packed_bounces_flags &= ~DLSS_RR_REPLACE_PENDING_FLAG;
+			}
+			if (medium_collision && (ps.hit_t < 0.0 || ps.hit_t > medium_t)) {
+				// The medium scattered before any surface: drop what the surface or the sky added.
+				ps.radiance = radiance_pre;
+				ps.throughput = throughput_entry;
+				ps.packed_bounces_flags = flags_entry;
+				rt_medium_scatter(ps, ray_origin + ray_dir * medium_t, unit_dir, medium_t);
+			}
 #ifdef DLSS_RR_ENABLED
 			if (bounce == 0u && (ps.packed_bounces_flags & DLSS_RR_REPLACE_PENDING_FLAG) != 0u) {
 				replace_pending = true;
@@ -487,8 +642,9 @@ vec3 radiance_octmap_sample(vec2 p_oct_uv, float p_roughness) {
 #endif // USE_RADIANCE_OCTMAP_ARRAY
 
 void main() {
-	// Transparency peel traces own their payload; the scene miss must not touch it.
-	if ((payload.packed_bounces_flags & PEEL_RAY_FLAG) != 0u) {
+	// Transparency peel traces own their payload; the scene miss must not touch it. Nor a trace that raygen ended at a
+	// collision with the medium, where a miss only means no surface came first.
+	if ((payload.packed_bounces_flags & (PEEL_RAY_FLAG | MEDIUM_BOUNDED_RAY_FLAG)) != 0u) {
 		return;
 	}
 
