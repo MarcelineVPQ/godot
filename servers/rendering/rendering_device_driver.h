@@ -794,8 +794,13 @@ public:
 
 	virtual AccelerationStructureID blas_create(VectorView<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags) = 0;
 	// A BLAS over cluster acceleration structures, one per cluster. Its builds build the clusters too; it can't be
-	// refit. Drivers without SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE fail with an error.
+	// refit. Drivers without SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE fail with an error, as for the two below.
 	virtual AccelerationStructureID blas_create_from_clusters(BufferID p_vertex_buffer, BufferID p_index_buffer, VectorView<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) = 0;
+	// Cluster acceleration structures only, one per cluster, at the addresses each build writes to p_address_buffer.
+	// Built like a BLAS, but only traced through BLASes over cluster references.
+	virtual AccelerationStructureID cluster_set_create(BufferID p_vertex_buffer, BufferID p_index_buffer, VectorView<AccelerationStructureCluster> p_clusters, BufferID p_address_buffer, uint64_t p_address_offset, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) = 0;
+	// A BLAS whose builds read an AccelerationStructureClusterReferences at p_references_offset of p_references_buffer.
+	virtual AccelerationStructureID blas_create_from_cluster_references(BufferID p_references_buffer, uint64_t p_references_offset, uint32_t p_max_cluster_count, BitField<AccelerationStructureFlagBits> p_flags) = 0;
 
 	struct AccelerationStructureInstance {
 		Transform3D transform;

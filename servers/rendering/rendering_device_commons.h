@@ -945,6 +945,15 @@ public:
 		uint32_t first_vertex = 0; // In the vertex buffer.
 	};
 
+	// The clusters a BLAS over cluster references is built from (see blas_create_from_cluster_references()), as the GPU
+	// reads it at each build: `count` device addresses of clusters of a cluster set, `stride` bytes apart from `address`.
+	struct AccelerationStructureClusterReferences {
+		uint32_t count = 0;
+		uint32_t stride = 0;
+		uint64_t address = 0;
+	};
+	static_assert(sizeof(AccelerationStructureClusterReferences) == 16);
+
 	/**************/
 	/**** MISC ****/
 	/**************/

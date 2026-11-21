@@ -1357,7 +1357,8 @@ private:
 		// --- Bottom Level ---
 		Vector<RDG::ResourceTracker *> draw_trackers;
 		HashSet<RID> untracked_buffers;
-		bool from_clusters = false; // Built by blas_create_from_clusters(); can't be refit.
+		bool from_clusters = false; // Built from clusters: by blas_create_from_clusters() and the like. Can't be refit.
+		bool cluster_set = false; // Built by cluster_set_create(); can't be traced on its own.
 
 		// --- Top Level ---
 		uint32_t max_instance_count = 0;
@@ -1393,6 +1394,14 @@ private:
 	bool _any_list_active() const;
 	Error _acceleration_structure_scratch_buffer_create(AccelerationStructure *p_acceleration_structure);
 	Error _acceleration_structure_scratch_grow(uint64_t p_size);
+	struct ClusterInputs {
+		Buffer *vertex_buffer = nullptr;
+		Buffer *index_buffer = nullptr;
+		Vector<RDG::ResourceTracker *> draw_trackers;
+		HashSet<RID> untracked_buffers;
+	};
+	Error _cluster_inputs_check(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, ClusterInputs &r_inputs);
+	RID _cluster_acceleration_structure_make_rid(AccelerationStructure &p_acceleration_structure, Vector<RDG::ResourceTracker *> &p_draw_trackers, HashSet<RID> &p_untracked_buffers);
 	Error _acceleration_structure_batch_push(RDG::RecordedAccelerationStructureBuild &r_build);
 	Error _blas_batch_add(RID p_blas, bool p_refit);
 	void _blas_remove_tlas_dependencies(AccelerationStructure *p_blas, RID p_blas_id);
@@ -1451,6 +1460,18 @@ public:
 	// The buffers are storage buffers with device addresses: float3 positions and uint8 indices. Its builds build every
 	// cluster again; blas_update() isn't supported and acceleration_structure_build_batch() turns refits into builds.
 	RID blas_create_from_clusters(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags);
+	// Cluster acceleration structures of p_clusters, as for blas_create_from_clusters(), without a BLAS over them: a set
+	// that BLASes made with blas_create_from_cluster_references() pick clusters from. It is built through
+	// acceleration_structure_build_batch() like a BLAS, but can't be an instance of a TLAS. Each build writes the device
+	// address of every cluster, in order, as a uint64 to p_address_buffer from p_address_offset (a storage buffer with a
+	// device address). A build moves the clusters, so the BLASes over them must be built again after it.
+	RID cluster_set_create(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, RID p_address_buffer, uint64_t p_address_offset, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags);
+	// A BLAS over at most p_max_cluster_count clusters of p_cluster_set, chosen anew for each build, on the GPU if wanted:
+	// each build reads an AccelerationStructureClusterReferences at p_references_offset (a multiple of 16) of
+	// p_references_buffer, a storage buffer with a device address and acceleration structure build input usage. The
+	// references must point into p_cluster_set, which must stay built while the BLAS is used. It can't be refit. Needs
+	// SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE.
+	RID blas_create_from_cluster_references(RID p_cluster_set, RID p_references_buffer, uint64_t p_references_offset, uint32_t p_max_cluster_count, BitField<AccelerationStructureFlagBits> p_flags);
 	RID tlas_create(uint32_t p_max_instance_count, BitField<AccelerationStructureFlagBits> p_flags);
 	bool acceleration_structure_is_valid(RID p_acceleration_structure);
 

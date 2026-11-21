@@ -323,6 +323,7 @@ Error RenderingDevice::_tlas_validate_instances(const AccelerationStructure *p_t
 		const AccelerationStructure *blas = acceleration_structure_owner.get_or_null(instance.blas);
 		ERR_FAIL_NULL_V_MSG(blas, ERR_INVALID_PARAMETER, "Instance " + itos(i) + " references a BLAS that is not valid.");
 		ERR_FAIL_COND_V(blas->type != RDD::ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL, ERR_INVALID_PARAMETER);
+		ERR_FAIL_COND_V_MSG(blas->cluster_set, ERR_INVALID_PARAMETER, "Instance " + itos(i) + " references a cluster set, which is traced only through BLASes over its clusters.");
 		ERR_FAIL_COND_V_MSG(blas->invalidated, ERR_INVALID_PARAMETER, "BLAS either has not been built yet, or has been invalidated by an operation and needs to be rebuilt.");
 		last_blas = instance.blas;
 	}
@@ -492,50 +493,116 @@ RID RenderingDevice::blas_create(Span<AccelerationStructureGeometry> p_geometrie
 	return id;
 }
 
-RID RenderingDevice::blas_create_from_clusters(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) {
-	ERR_FAIL_COND_V_MSG(!has_feature(SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE), RID(), "The current rendering device doesn't support cluster acceleration structures.");
-	ERR_FAIL_COND_V(p_clusters.is_empty(), RID());
-	ERR_FAIL_COND_V_MSG(p_flags & ~(ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT | ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT), RID(), "A BLAS built from clusters only takes the PREFER_FAST_TRACE and PREFER_FAST_BUILD flags.");
+// Checks the inputs of a structure built from clusters and collects the trackers of its buffers.
+Error RenderingDevice::_cluster_inputs_check(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, ClusterInputs &r_inputs) {
+	ERR_FAIL_COND_V_MSG(!has_feature(SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE), ERR_UNAVAILABLE, "The current rendering device doesn't support cluster acceleration structures.");
+	ERR_FAIL_COND_V(p_clusters.is_empty(), ERR_INVALID_PARAMETER);
 
-	Buffer *vertex_buffer = storage_buffer_owner.get_or_null(p_vertex_buffer);
-	ERR_FAIL_NULL_V_MSG(vertex_buffer, RID(), "The vertex buffer must be a valid storage buffer.");
-	Buffer *index_buffer = storage_buffer_owner.get_or_null(p_index_buffer);
-	ERR_FAIL_NULL_V_MSG(index_buffer, RID(), "The index buffer must be a valid storage buffer.");
+	r_inputs.vertex_buffer = storage_buffer_owner.get_or_null(p_vertex_buffer);
+	ERR_FAIL_NULL_V_MSG(r_inputs.vertex_buffer, ERR_INVALID_PARAMETER, "The vertex buffer must be a valid storage buffer.");
+	r_inputs.index_buffer = storage_buffer_owner.get_or_null(p_index_buffer);
+	ERR_FAIL_NULL_V_MSG(r_inputs.index_buffer, ERR_INVALID_PARAMETER, "The index buffer must be a valid storage buffer.");
 	for (const AccelerationStructureCluster &cluster : p_clusters) {
-		ERR_FAIL_COND_V_MSG((uint64_t(cluster.first_vertex) + cluster.vertex_count) * sizeof(float) * 3 > vertex_buffer->size, RID(), "A cluster's vertices are outside the range of the vertex buffer.");
-		ERR_FAIL_COND_V_MSG((uint64_t(cluster.first_triangle) + cluster.triangle_count) * 3 > index_buffer->size, RID(), "A cluster's triangles are outside the range of the index buffer.");
+		ERR_FAIL_COND_V_MSG((uint64_t(cluster.first_vertex) + cluster.vertex_count) * sizeof(float) * 3 > r_inputs.vertex_buffer->size, ERR_INVALID_PARAMETER, "A cluster's vertices are outside the range of the vertex buffer.");
+		ERR_FAIL_COND_V_MSG((uint64_t(cluster.first_triangle) + cluster.triangle_count) * 3 > r_inputs.index_buffer->size, ERR_INVALID_PARAMETER, "A cluster's triangles are outside the range of the index buffer.");
 	}
 
-	Vector<RDG::ResourceTracker *> draw_trackers;
-	HashSet<RID> untracked_buffers;
 	for (const RID &rid : { p_vertex_buffer, p_index_buffer }) {
 		Buffer *buffer = storage_buffer_owner.get_or_null(rid);
 		if (buffer->draw_tracker != nullptr) {
-			draw_trackers.push_back(buffer->draw_tracker);
+			r_inputs.draw_trackers.push_back(buffer->draw_tracker);
 		} else {
-			untracked_buffers.insert(rid);
+			r_inputs.untracked_buffers.insert(rid);
 		}
 		_check_transfer_worker_buffer(buffer);
 	}
+	return OK;
+}
 
-	AccelerationStructure acceleration_structure;
-	acceleration_structure.type = RDD::ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
-	acceleration_structure.from_clusters = true;
-	acceleration_structure.driver_id = driver->blas_create_from_clusters(vertex_buffer->driver_id, index_buffer->driver_id, VectorView<AccelerationStructureCluster>(p_clusters.ptr(), p_clusters.size()), p_geometry_flags, p_flags);
-	ERR_FAIL_COND_V_MSG(!acceleration_structure.driver_id, RID(), "Failed to create BLAS from clusters.");
+// Owns p_acceleration_structure, a BLAS or cluster set built from clusters, under a new RID.
+RID RenderingDevice::_cluster_acceleration_structure_make_rid(AccelerationStructure &p_acceleration_structure, Vector<RDG::ResourceTracker *> &p_draw_trackers, HashSet<RID> &p_untracked_buffers) {
+	p_acceleration_structure.type = RDD::ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+	p_acceleration_structure.from_clusters = true;
+	p_acceleration_structure.draw_tracker = RDG::resource_tracker_create();
+	p_acceleration_structure.draw_tracker->acceleration_structure_driver_id = p_acceleration_structure.driver_id;
+	p_acceleration_structure.draw_tracker->usage = RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE;
+	p_acceleration_structure.draw_trackers = std::move(p_draw_trackers);
+	p_acceleration_structure.untracked_buffers = std::move(p_untracked_buffers);
 
-	acceleration_structure.draw_tracker = RDG::resource_tracker_create();
-	acceleration_structure.draw_tracker->acceleration_structure_driver_id = acceleration_structure.driver_id;
-	acceleration_structure.draw_tracker->usage = RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE;
-	acceleration_structure.draw_trackers = std::move(draw_trackers);
-	acceleration_structure.untracked_buffers = std::move(untracked_buffers);
-
-	RID id = acceleration_structure_owner.make_rid(acceleration_structure);
+	RID id = acceleration_structure_owner.make_rid(p_acceleration_structure);
 #ifdef DEV_ENABLED
 	set_resource_name(id, "RID:" + itos(id.get_id()));
 #endif
+	return id;
+}
+
+RID RenderingDevice::blas_create_from_clusters(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) {
+	ERR_FAIL_COND_V_MSG(p_flags & ~(ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT | ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT), RID(), "Structures built from clusters only take the PREFER_FAST_TRACE and PREFER_FAST_BUILD flags.");
+	ClusterInputs inputs;
+	ERR_FAIL_COND_V(_cluster_inputs_check(p_vertex_buffer, p_index_buffer, p_clusters, inputs) != OK, RID());
+
+	AccelerationStructure acceleration_structure;
+	acceleration_structure.driver_id = driver->blas_create_from_clusters(inputs.vertex_buffer->driver_id, inputs.index_buffer->driver_id, VectorView<AccelerationStructureCluster>(p_clusters.ptr(), p_clusters.size()), p_geometry_flags, p_flags);
+	ERR_FAIL_COND_V_MSG(!acceleration_structure.driver_id, RID(), "Failed to create BLAS from clusters.");
+
+	RID id = _cluster_acceleration_structure_make_rid(acceleration_structure, inputs.draw_trackers, inputs.untracked_buffers);
 	_add_dependency(id, p_vertex_buffer);
 	_add_dependency(id, p_index_buffer);
+	return id;
+}
+
+RID RenderingDevice::cluster_set_create(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, RID p_address_buffer, uint64_t p_address_offset, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) {
+	ERR_FAIL_COND_V_MSG(p_flags & ~(ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT | ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT), RID(), "Structures built from clusters only take the PREFER_FAST_TRACE and PREFER_FAST_BUILD flags.");
+	ClusterInputs inputs;
+	ERR_FAIL_COND_V(_cluster_inputs_check(p_vertex_buffer, p_index_buffer, p_clusters, inputs) != OK, RID());
+	Buffer *address_buffer = storage_buffer_owner.get_or_null(p_address_buffer);
+	ERR_FAIL_NULL_V_MSG(address_buffer, RID(), "The address buffer must be a valid storage buffer.");
+	ERR_FAIL_COND_V_MSG(p_address_offset % sizeof(uint64_t) != 0 || p_address_offset + uint64_t(p_clusters.size()) * sizeof(uint64_t) > address_buffer->size, RID(), "The cluster addresses must fit the address buffer, 8-byte aligned.");
+	_check_transfer_worker_buffer(address_buffer);
+	if (address_buffer->draw_tracker != nullptr) {
+		inputs.draw_trackers.push_back(address_buffer->draw_tracker);
+	} else {
+		inputs.untracked_buffers.insert(p_address_buffer);
+	}
+
+	AccelerationStructure acceleration_structure;
+	acceleration_structure.cluster_set = true;
+	acceleration_structure.driver_id = driver->cluster_set_create(inputs.vertex_buffer->driver_id, inputs.index_buffer->driver_id, VectorView<AccelerationStructureCluster>(p_clusters.ptr(), p_clusters.size()), address_buffer->driver_id, p_address_offset, p_geometry_flags, p_flags);
+	ERR_FAIL_COND_V_MSG(!acceleration_structure.driver_id, RID(), "Failed to create cluster set.");
+
+	RID id = _cluster_acceleration_structure_make_rid(acceleration_structure, inputs.draw_trackers, inputs.untracked_buffers);
+	_add_dependency(id, p_vertex_buffer);
+	_add_dependency(id, p_index_buffer);
+	_add_dependency(id, p_address_buffer);
+	return id;
+}
+
+RID RenderingDevice::blas_create_from_cluster_references(RID p_cluster_set, RID p_references_buffer, uint64_t p_references_offset, uint32_t p_max_cluster_count, BitField<AccelerationStructureFlagBits> p_flags) {
+	ERR_FAIL_COND_V_MSG(!has_feature(SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE), RID(), "The current rendering device doesn't support cluster acceleration structures.");
+	ERR_FAIL_COND_V(p_max_cluster_count == 0, RID());
+	ERR_FAIL_COND_V_MSG(p_flags & ~(ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT | ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT), RID(), "Structures built from clusters only take the PREFER_FAST_TRACE and PREFER_FAST_BUILD flags.");
+	const AccelerationStructure *cluster_set = acceleration_structure_owner.get_or_null(p_cluster_set);
+	ERR_FAIL_COND_V_MSG(cluster_set == nullptr || !cluster_set->cluster_set, RID(), "The cluster set must be a valid cluster set.");
+	Buffer *references_buffer = storage_buffer_owner.get_or_null(p_references_buffer);
+	ERR_FAIL_NULL_V_MSG(references_buffer, RID(), "The references buffer must be a valid storage buffer.");
+	ERR_FAIL_COND_V_MSG(p_references_offset % 16 != 0 || p_references_offset + sizeof(AccelerationStructureClusterReferences) > references_buffer->size, RID(), "The cluster references must fit the references buffer, 16-byte aligned.");
+	_check_transfer_worker_buffer(references_buffer);
+
+	Vector<RDG::ResourceTracker *> draw_trackers;
+	HashSet<RID> untracked_buffers;
+	if (references_buffer->draw_tracker != nullptr) {
+		draw_trackers.push_back(references_buffer->draw_tracker);
+	} else {
+		untracked_buffers.insert(p_references_buffer);
+	}
+
+	AccelerationStructure acceleration_structure;
+	acceleration_structure.driver_id = driver->blas_create_from_cluster_references(references_buffer->driver_id, p_references_offset, p_max_cluster_count, p_flags);
+	ERR_FAIL_COND_V_MSG(!acceleration_structure.driver_id, RID(), "Failed to create BLAS from cluster references.");
+
+	RID id = _cluster_acceleration_structure_make_rid(acceleration_structure, draw_trackers, untracked_buffers);
+	_add_dependency(id, p_cluster_set);
+	_add_dependency(id, p_references_buffer);
 	return id;
 }
 

@@ -5552,6 +5552,14 @@ RDD::AccelerationStructureID RenderingDeviceDriverD3D12::blas_create_from_cluste
 	ERR_FAIL_V_MSG(AccelerationStructureID(), "Cluster acceleration structures are not supported by the D3D12 driver.");
 }
 
+RDD::AccelerationStructureID RenderingDeviceDriverD3D12::cluster_set_create(BufferID p_vertex_buffer, BufferID p_index_buffer, VectorView<AccelerationStructureCluster> p_clusters, BufferID p_address_buffer, uint64_t p_address_offset, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) {
+	ERR_FAIL_V_MSG(AccelerationStructureID(), "Cluster acceleration structures are not supported by the D3D12 driver.");
+}
+
+RDD::AccelerationStructureID RenderingDeviceDriverD3D12::blas_create_from_cluster_references(BufferID p_references_buffer, uint64_t p_references_offset, uint32_t p_max_cluster_count, BitField<AccelerationStructureFlagBits> p_flags) {
+	ERR_FAIL_V_MSG(AccelerationStructureID(), "Cluster acceleration structures are not supported by the D3D12 driver.");
+}
+
 RDD::AccelerationStructureID RenderingDeviceDriverD3D12::tlas_create(uint32_t p_max_instance_count, BitField<AccelerationStructureFlagBits> p_flags) {
 	ERR_FAIL_V_MSG(AccelerationStructureID(), "Ray tracing is not currently supported by the D3D12 driver.");
 }

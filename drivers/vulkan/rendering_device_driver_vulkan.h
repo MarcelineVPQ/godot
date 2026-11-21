@@ -729,18 +729,26 @@ public:
 
 	// ----- ACCELERATION STRUCTURE -----
 
-	// Both builds of a BLAS made from clusters: one cluster acceleration structure per cluster (implicit
-	// destinations, their addresses written to `address_buffer`), then the BLAS over them at a fixed address.
+	// The builds of a BLAS made from clusters: one cluster acceleration structure per cluster (implicit destinations,
+	// their addresses written to `address_buffer` or the caller's buffer), then the BLAS over them at a fixed address.
+	// A cluster set only builds the clusters; a BLAS over cluster references only builds the BLAS.
 	struct ClusterBuild {
+		bool build_clusters = true;
+		bool build_bottom_level = true;
 		VkClusterAccelerationStructureTriangleClusterInputNV triangle_input = {};
 		VkClusterAccelerationStructureClustersBottomLevelInputNV bottom_level_input = {};
 		VkClusterAccelerationStructureCommandsInfoNV cluster_commands = {};
 		VkClusterAccelerationStructureCommandsInfoNV bottom_level_commands = {};
 		// CPU visible: the build infos of the clusters, the build info of the BLAS and the BLAS address.
 		RDD::BufferID input_buffer;
-		// The addresses of the built clusters, read by the BLAS build.
+		// The addresses of the built clusters, read by the BLAS build; unset when the caller's buffer holds them.
 		RDD::BufferID address_buffer;
 	};
+
+	bool _cluster_build_setup_clusters(VectorView<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureFlagBits> p_flags, ClusterBuild *r_build, VkAccelerationStructureBuildSizesInfoKHR &r_sizes);
+	void _cluster_build_setup_bottom_level(uint32_t p_max_cluster_count, BitField<AccelerationStructureFlagBits> p_flags, ClusterBuild *r_build, VkAccelerationStructureBuildSizesInfoKHR &r_sizes);
+	void _cluster_build_write_cluster_infos(uint8_t *r_infos, VectorView<AccelerationStructureCluster> p_clusters, BufferID p_vertex_buffer, BufferID p_index_buffer, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags);
+	void _cluster_build_free(ClusterBuild *p_build);
 
 	struct AccelerationStructureInfo {
 		VkAccelerationStructureKHR vk_acceleration_structure = VK_NULL_HANDLE;
@@ -764,6 +772,8 @@ public:
 
 	virtual AccelerationStructureID blas_create(VectorView<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags) override final;
 	virtual AccelerationStructureID blas_create_from_clusters(BufferID p_vertex_buffer, BufferID p_index_buffer, VectorView<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) override final;
+	virtual AccelerationStructureID cluster_set_create(BufferID p_vertex_buffer, BufferID p_index_buffer, VectorView<AccelerationStructureCluster> p_clusters, BufferID p_address_buffer, uint64_t p_address_offset, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) override final;
+	virtual AccelerationStructureID blas_create_from_cluster_references(BufferID p_references_buffer, uint64_t p_references_offset, uint32_t p_max_cluster_count, BitField<AccelerationStructureFlagBits> p_flags) override final;
 	virtual AccelerationStructureID tlas_create(uint32_t p_max_instance_count, BitField<AccelerationStructureFlagBits> p_flags) override final;
 	virtual void acceleration_structure_instance_write(uint8_t *r_driver_instance, const AccelerationStructureInstance &p_instance) override final;
 	virtual void acceleration_structure_free(AccelerationStructureID p_acceleration_structure) override final;
