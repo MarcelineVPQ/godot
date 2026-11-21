@@ -500,6 +500,8 @@ void debug_visualize(int vis_mode, MaterialDebugInputs dbg, float alpha) {
 	} else if (vis_mode == RT_VIS_VOLUMETRIC_FOG || vis_mode == RT_VIS_VOLUMETRIC_FOG_TRANSMITTANCE) {
 		vec3 world_hit = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
 		ps.radiance = rt_volumetric_fog_debug(vis_mode, rt_volumetric_fog_at(world_hit, rt_world_to_view(world_hit)));
+	} else if (vis_mode == RT_VIS_VOLUMETRIC_FOG_WORLD_GRID) {
+		ps.radiance = rt_fog_world_grid_debug(gl_WorldRayOriginEXT, gl_WorldRayDirectionEXT, gl_HitTEXT);
 	} else if (vis_mode == 22) {
 		// BRDF below-hemisphere fallback visualization. Reflects the two-layer
 		// recovery applied in shade_and_bounce:
