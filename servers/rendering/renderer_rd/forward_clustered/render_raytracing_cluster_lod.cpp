@@ -117,8 +117,11 @@ void RTClusterLodSelector::_scale_range(const Basis &p_basis, float &r_min, floa
 // at mesh-space distance d with radius r is d * min_scale - r * max_scale. Every cluster's sphere is inside the surface
 // bounds, so no gap is smaller than the bounds' own, `distance`; a camera move by m in mesh space changes a gap by at
 // most m * min_scale, `moved`. So the errors change by at most a factor of 1 + moved / distance, under any scale. An
-// orthographic projection doesn't depend on distances at all. A non-uniform scale changing its proportions counts by
-// how much they changed.
+// orthographic projection doesn't depend on distances at all.
+//
+// A change of the scale's proportions a = max_scale / min_scale to a' scales an error, e * a * P / (d - r * a) in
+// units of min_scale, by a' / a * (1 + r * (a' - a) / (d - r * a')). By the same containment, r * min_scale * |a' - a|
+// over the gap is at most R * min_scale * |a' - a| / distance, so both factors count.
 float RTClusterLodSelector::_staleness(const View &p_view, const View::Instance &p_instance, const RTClusterLodSurface &p_surface, const Transform3D &p_transform) const {
 	if (!p_instance.selected) {
 		return FLT_MAX;
@@ -137,8 +140,9 @@ float RTClusterLodSelector::_staleness(const View &p_view, const View::Instance 
 	const float moved = p_view.orthographic ? 0.0f : camera.distance_to(p_instance.camera) * min_scale;
 	const float projection_change = p_view.pixel_scale > p_instance.pixel_scale ? p_view.pixel_scale / p_instance.pixel_scale : p_instance.pixel_scale / p_view.pixel_scale;
 	const float anisotropy = max_scale / min_scale;
-	const float anisotropy_change = anisotropy > p_instance.anisotropy ? anisotropy / p_instance.anisotropy : p_instance.anisotropy / anisotropy;
-	const float staleness = projection_change * anisotropy_change * (1.0f + moved / distance);
+	const float anisotropy_ratio = anisotropy > p_instance.anisotropy ? anisotropy / p_instance.anisotropy : p_instance.anisotropy / anisotropy;
+	const float anisotropy_gap = p_view.orthographic ? 0.0f : p_surface.radius * min_scale * Math::abs(anisotropy - p_instance.anisotropy) / distance;
+	const float staleness = projection_change * anisotropy_ratio * (1.0f + anisotropy_gap) * (1.0f + moved / distance);
 	return staleness > 1.0f + HYSTERESIS ? staleness : 0.0f;
 }
 
