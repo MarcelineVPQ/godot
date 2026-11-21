@@ -7,8 +7,11 @@ This fork of Godot 4.8-dev builds on NVIDIA's real-time path tracing branch
 |---|---|---|
 | DLSS Ray Reconstruction on Linux | The NGX SDK on Linux/Vulkan, so the path tracer is denoised by DLSS RR outside Windows too | linux-dlss-rr |
 | World fog grid | FogVolumes (including custom fog shaders) rendered into a world-space 3D grid around the camera, which every path segment can read | pt-volumetrics |
-| Volumetric path tracing | Light scatters in fog for real: delta tracking against brick majorants, light sampling with shadow transmittance, multiple scattering, emission; fog shows in reflections and bounces, smoke casts shadows; guides for DLSS RR | pt-volumetrics |
+| Volumetric path tracing | Light scatters in fog for real: delta tracking against brick majorants, light sampling with shadow transmittance, multiple scattering, per-channel emission summed as floats on the GPU (float atomics, with a fixed-point fallback); fog shows in reflections and bounces, smoke casts shadows; guides for DLSS RR | pt-volumetrics |
 | Cluster geometry (virtualised geometry, phase 1) | Meshes baked into cluster LOD hierarchies on import (meshoptimizer clusterlod) and traced through VK_NV_cluster_acceleration_structure (RTX Mega Geometry); Triangles, Clusters, Groups, LOD and Error debug views | virtual-geometry |
+| Cluster LOD selection | Each frame a compute pass picks every instance's cluster cut from the camera position, with a bounded screen error and hysteresis; rebuilds are budgeted per frame; the debug views show real levels and errors; stats in the render info | cluster-lod |
+| Shader variant check | An offline test compiles every ShaderRD variant (641 at present) and catches interface clashes, plus a script and a pre-commit hook so coverage can't drift | cluster-lod |
+| Validation-clean | Runs clean under Khronos validation with synchronization checks; the only messages left are inside NVIDIA's NGX library, documented in drivers/ngx/README.md. Includes an inherited Forward+ multiview depth fix | cluster-lod |
 
 **Ray-traced audio (companion).** Paired with our fork of
 [Nexus Resonance](https://github.com/MarcelineVPQ/godot-nexus-resonance), a Steam Audio
@@ -18,7 +21,10 @@ the listener, with in-engine debug overlays. It loads as a plugin; nothing to me
 
 Everything is off or falls back cleanly when the hardware or driver lacks it,
 and raster rendering is unchanged. The branches stack in order; the newest
-(virtual-geometry) has everything.
+(cluster-lod) has everything.
+
+Measured on an RTX 5080: 10,000 cluster-LOD instances at 60 fps with no hitches; about
+100 KB of video memory per instance for a 50k-triangle mesh.
 
 Status: in active development. Tested on Linux with an RTX 50-series GPU.
 Contributions from here are offered upstream where they fit.
