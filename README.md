@@ -10,7 +10,7 @@ This fork of Godot 4.8-dev builds on NVIDIA's real-time path tracing branch
 | Volumetric path tracing | Light scatters in fog for real: delta tracking against brick majorants, light sampling with shadow transmittance, multiple scattering, per-channel emission summed as floats on the GPU (float atomics, with a fixed-point fallback); fog shows in reflections and bounces, smoke casts shadows; guides for DLSS RR | pt-volumetrics |
 | Cluster geometry (virtualised geometry, phase 1) | Meshes baked into cluster LOD hierarchies on import (meshoptimizer clusterlod) and traced through VK_NV_cluster_acceleration_structure (RTX Mega Geometry); Triangles, Clusters, Groups, LOD and Error debug views | virtual-geometry |
 | Cluster LOD selection | Each frame a compute pass picks every instance's cluster cut from the camera position, with a bounded screen error and hysteresis; rebuilds are budgeted per frame; the debug views show real levels and errors; stats in the render info | cluster-lod |
-| Shader variant check | An offline test compiles every ShaderRD variant (643 at present) and catches interface clashes; a script, run by a pre-commit hook and CI, flags shader classes and defines the test doesn't reach | virtual-geometry |
+| Shader variant check | An offline test compiles every ShaderRD variant (643 at present) and catches interface clashes; a script, run by a pre-commit hook, flags shader classes and defines the test doesn't reach | virtual-geometry |
 | Validation-clean | Runs under Khronos validation with synchronization checks; two messages remain, both inside NVIDIA's NGX library (documented in drivers/ngx/README.md). Includes an inherited Forward+ multiview depth fix | virtual-geometry |
 
 **Ray-traced audio (companion).** Paired with our fork of
