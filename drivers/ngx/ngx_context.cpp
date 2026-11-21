@@ -28,9 +28,6 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-// This software contains source code provided by NVIDIA Corporation.
-// (dlssd_get_optimal_settings follows the NGX SDK helper NGX_DLSSD_GET_OPTIMAL_SETTINGS.)
-
 #include "ngx_context.h"
 
 #ifdef NGX_ENABLED
@@ -257,11 +254,26 @@ bool NGXContext::dlssd_get_optimal_settings(uint32_t p_target_width, uint32_t p_
 	}
 	NVSDK_NGX_Parameter *parameters = (NVSDK_NGX_Parameter *)capability_parameters;
 
-	// Same steps as NGX_DLSSD_GET_OPTIMAL_SETTINGS, which the SDK ships only in its D3D helper header.
+	// The library publishes a callback in its capability parameters that fills in the render sizes it accepts for a
+	// target size and quality mode.
 	void *callback = nullptr;
 	NVSDK_NGX_Parameter_GetVoidPointer(parameters, NVSDK_NGX_Parameter_DLSSDOptimalSettingsCallback, &callback);
 	if (callback == nullptr) {
 		return false;
+	}
+
+	// The parameters are shared by every call, so a size the library doesn't write would still hold the value of an
+	// earlier mode. Zero means the library left it out.
+	static const char *const outputs[] = {
+		NVSDK_NGX_Parameter_OutWidth,
+		NVSDK_NGX_Parameter_OutHeight,
+		NVSDK_NGX_Parameter_DLSS_Get_Dynamic_Min_Render_Width,
+		NVSDK_NGX_Parameter_DLSS_Get_Dynamic_Min_Render_Height,
+		NVSDK_NGX_Parameter_DLSS_Get_Dynamic_Max_Render_Width,
+		NVSDK_NGX_Parameter_DLSS_Get_Dynamic_Max_Render_Height,
+	};
+	for (const char *output : outputs) {
+		NVSDK_NGX_Parameter_SetUI(parameters, output, 0);
 	}
 	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_Width, p_target_width);
 	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_Height, p_target_height);
@@ -271,26 +283,17 @@ bool NGXContext::dlssd_get_optimal_settings(uint32_t p_target_width, uint32_t p_
 		return false;
 	}
 
-	unsigned int value = 0;
-	NVSDK_NGX_Parameter_GetUI(parameters, NVSDK_NGX_Parameter_OutWidth, &value);
-	r_settings.optimal_width = value;
-	NVSDK_NGX_Parameter_GetUI(parameters, NVSDK_NGX_Parameter_OutHeight, &value);
-	r_settings.optimal_height = value;
-	// Older libraries do not report a range; the optimal size is then the only size they accept.
-	r_settings.min_width = r_settings.max_width = r_settings.optimal_width;
-	r_settings.min_height = r_settings.max_height = r_settings.optimal_height;
-	if (NVSDK_NGX_SUCCEED(NVSDK_NGX_Parameter_GetUI(parameters, NVSDK_NGX_Parameter_DLSS_Get_Dynamic_Max_Render_Width, &value))) {
-		r_settings.max_width = value;
+	unsigned int values[std_size(outputs)] = {};
+	for (uint32_t i = 0; i < std_size(outputs); i++) {
+		NVSDK_NGX_Parameter_GetUI(parameters, outputs[i], &values[i]);
 	}
-	if (NVSDK_NGX_SUCCEED(NVSDK_NGX_Parameter_GetUI(parameters, NVSDK_NGX_Parameter_DLSS_Get_Dynamic_Max_Render_Height, &value))) {
-		r_settings.max_height = value;
-	}
-	if (NVSDK_NGX_SUCCEED(NVSDK_NGX_Parameter_GetUI(parameters, NVSDK_NGX_Parameter_DLSS_Get_Dynamic_Min_Render_Width, &value))) {
-		r_settings.min_width = value;
-	}
-	if (NVSDK_NGX_SUCCEED(NVSDK_NGX_Parameter_GetUI(parameters, NVSDK_NGX_Parameter_DLSS_Get_Dynamic_Min_Render_Height, &value))) {
-		r_settings.min_height = value;
-	}
+	r_settings.optimal_width = values[0];
+	r_settings.optimal_height = values[1];
+	// Older libraries don't report a range; the optimal size is then the only size they accept.
+	r_settings.min_width = values[2] ? values[2] : values[0];
+	r_settings.min_height = values[3] ? values[3] : values[1];
+	r_settings.max_width = values[4] ? values[4] : values[0];
+	r_settings.max_height = values[5] ? values[5] : values[1];
 	// A quality mode the library does not offer reports a zero size.
 	return r_settings.optimal_width > 0 && r_settings.optimal_height > 0;
 }

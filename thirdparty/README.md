@@ -904,6 +904,31 @@ Patches:
 - `0001-remove-unused-save-features.patch` ([GH-113965](https://github.com/godotengine/godot/issues/113965))
 
 
+## ngx
+
+- Upstream: https://github.com/NVIDIA/DLSS
+- Version: 310.9.16 (9981c6350dc58c0ce21f024fd65e31e851c31689, 2026)
+- License: NVIDIA RTX SDKs License (not an open-source license)
+
+Not vendored: no file of the SDK is committed. Building with `use_ngx=yes`
+downloads these files from the pinned commit into `thirdparty/ngx/` (ignored by
+git) and links them; see
+`drivers/ngx/README.md`. Binaries built that way are not MIT only; see the
+`thirdparty/ngx/*` entry in `COPYRIGHT.txt`.
+
+- `LICENSE.txt`
+- `include/nvsdk_ngx_defs.h`
+- `include/nvsdk_ngx_defs_dlssd.h`
+- `include/nvsdk_ngx_defs_vk.h`
+- `include/nvsdk_ngx_helpers_dlssd_vk.h`
+- `include/nvsdk_ngx_helpers_vk.h`
+- `include/nvsdk_ngx_params.h`
+- `include/nvsdk_ngx_params_dlssd.h`
+- `include/nvsdk_ngx_vk.h`
+- `lib/Linux_x86_64/libnvsdk_ngx.a`
+- `lib/Linux_x86_64/rel/libnvidia-ngx-dlssd.so.310.9.16`
+
+
 ## openxr
 
 - Upstream: https://github.com/KhronosGroup/OpenXR-SDK

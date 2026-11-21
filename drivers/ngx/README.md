@@ -31,3 +31,22 @@ and this repository is MIT. So no NGX header or library is ever committed; the b
 from NVIDIA's own repository instead. NVIDIA's licence (`thirdparty/ngx/LICENSE.txt` after a
 build) lets an application ship the DLSS library with it under the licence's conditions, which
 include notifying NVIDIA before a commercial release and listing the library's third-party notices.
+
+## Licence and releases
+
+A binary built with NGX is not MIT only: it links `libnvsdk_ngx.a`, contains code from the SDK's
+headers and loads NVIDIA's DLSS libraries, all under the NVIDIA RTX SDKs licence (see the
+`thirdparty/ngx/*` entry in `COPYRIGHT.txt`). `drivers/ngx/*.cpp` and `dlss_ngx.cpp` hold no
+NVIDIA source code; they call the SDK's API.
+
+Decided for this fork: its public binaries (the CI build and every release zip) are built
+without NGX (`use_ngx=no`), so they are MIT and NVIDIA-free. A build with NGX is made only to
+ship a product, and its release checklist is:
+
+1. Ship `thirdparty/ngx/LICENSE.txt` and the notice "This software contains source code provided
+   by NVIDIA Corporation." with it.
+2. Notify NVIDIA before a commercial release (supplement section 4 of the licence:
+   https://developer.nvidia.com/sw-notification, with company, publisher and developer, SDK,
+   application name, platform, ship date and a link).
+3. Attribute DLSS and show the NVIDIA marks on the splash screen, the about box and the credits
+   (supplement section 7.1(b)).
