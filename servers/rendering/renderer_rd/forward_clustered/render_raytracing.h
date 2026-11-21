@@ -51,6 +51,9 @@
 #define RB_TEX_RT_DEPTH SNAME("rt_depth")
 #define RB_TEX_RT_SKY SNAME("rt_sky")
 
+#define RB_SCOPE_RT_GUIDE_DEPTH SNAME("rt_guide_depth")
+#define RB_TEX_RT_GUIDE_DEPTH SNAME("depth")
+
 #define RB_SCOPE_RT_TIMING SNAME("rt_timing")
 #define RB_TEX_RT_TIMING SNAME("ticks")
 
@@ -1580,6 +1583,12 @@ public:
 	RID rt_get_texture(RenderSceneBuffersRD *p_render_buffers) const;
 	bool rt_has_depth_texture(RenderSceneBuffersRD *p_render_buffers) const;
 	RID rt_get_depth_texture(RenderSceneBuffersRD *p_render_buffers) const;
+	// The depth DLSS reads with RT_FLAG_GUIDE_DEPTH_ENABLED: the surfaces' depth, except where the medium's guides
+	// stand in for them. The depth buffer keeps the surfaces, so raster passes drawn after the trace aren't hidden.
+	void rt_ensure_guide_depth_texture(RenderSceneBuffersRD *p_render_buffers);
+	void rt_free_guide_depth_texture(RenderSceneBuffersRD *p_render_buffers);
+	bool rt_has_guide_depth_texture(RenderSceneBuffersRD *p_render_buffers) const;
+	RID rt_get_guide_depth_texture(RenderSceneBuffersRD *p_render_buffers) const;
 
 	// Screen-space sky, drawn before the trace so primary-ray misses can read
 	// the real sky shader instead of the prefiltered radiance octmap.

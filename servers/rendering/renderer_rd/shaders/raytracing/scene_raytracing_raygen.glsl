@@ -47,6 +47,8 @@ layout(set = 0, binding = 1) uniform accelerationStructureEXT tlas;
 layout(set = 0, binding = 31) uniform accelerationStructureEXT tlas_transparent;
 layout(set = 0, binding = 29) uniform texture2D prepass_depth_texture;
 layout(set = 0, binding = 30) uniform texture2D prepass_color_texture;
+// The depth DLSS reads with RT_FLAG_GUIDE_DEPTH_ENABLED; see rt_write_guide_depth().
+layout(set = 0, binding = 46, r32f) uniform writeonly image2D rt_guide_depth_image;
 
 layout(location = 0) rayPayloadEXT PathPayload payload;
 
@@ -253,13 +255,13 @@ void rt_medium_scatter(inout PathState r_ps, vec3 p_pos, vec3 p_dir, float p_t, 
 	r_ps.offset_normal = r_ps.next_ray_dir;
 }
 
-// Where the medium hides most of what's behind, the primary ray's depth, motion and DLSS-RR guides become those of the
-// fog at the point where its transmittance falls to one half, facing the camera. Unlike the scatter events, that point
-// doesn't change with the samples, so the guides don't flicker. p_dir is unit, p_t_end in meters. Returns true if it wrote.
-// The depth is copied into the depth buffer, so what reads that after the trace sees the fog there as a surface: the
-// raster transparent pass (editor gizmos and transparent objects drawn there are hidden behind it), screen-space
-// effects that read depth, and DLSS. The docs of the transport setting say so.
-bool rt_medium_write_primary_guides(vec3 p_origin, vec3 p_dir, float p_t_end) {
+// Where the medium hides most of what's behind, the primary ray's motion and DLSS-RR guides become those of the fog at
+// the point where its transmittance falls to one half, facing the camera, and r_depth is that point's depth for DLSS
+// (rt_write_guide_depth()). Unlike the scatter events, that point doesn't change with the samples, so the guides don't
+// flicker. p_dir is unit, p_t_end in meters. Returns true if it wrote. The depth buffer keeps the surfaces' depth, so
+// raster passes drawn after the trace (transparent objects, editor gizmos) aren't hidden behind the fog.
+bool rt_medium_write_primary_guides(vec3 p_origin, vec3 p_dir, float p_t_end, out float r_depth) {
+	r_depth = 0.0;
 	float t_half = rt_medium_depth_distance(p_origin, p_dir, p_t_end, 0.693147);
 	if (t_half < 0.0) {
 		return false;
@@ -267,7 +269,7 @@ bool rt_medium_write_primary_guides(vec3 p_origin, vec3 p_dir, float p_t_end) {
 	vec3 pos = p_origin + p_dir * t_half;
 	ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
 	vec2 motion = rt_motion_vector(pos, pos);
-	imageStore(rt_depth_image, pixel, vec4(rt_ndc_depth(pos)));
+	r_depth = rt_ndc_depth(pos);
 	imageStore(rt_velocity_image, pixel, vec4(motion, 0.0, 0.0));
 #ifdef DLSS_RR_ENABLED
 	dlss_rr_write_specular_motion_vector(motion);
@@ -275,6 +277,17 @@ bool rt_medium_write_primary_guides(vec3 p_origin, vec3 p_dir, float p_t_end) {
 	imageStore(dlss_rr_normal_roughness, pixel, vec4(-p_dir, 1.0));
 #endif
 	return true;
+}
+
+// With RT_FLAG_GUIDE_DEPTH_ENABLED (the viewport upscales with DLSS), DLSS reads its depth from rt_guide_depth_image
+// instead of the depth buffer: the medium's guide depth where p_medium, else the surfaces' depth, which the hits and
+// misses of sample 0's primary segment wrote to rt_depth_image.
+void rt_write_guide_depth(ivec2 p_pixel, bool p_medium, float p_medium_depth) {
+	if ((RT_FLAGS & RT_FLAG_GUIDE_DEPTH_ENABLED) == 0u) {
+		return;
+	}
+	float depth = p_medium ? p_medium_depth : imageLoad(rt_depth_image, p_pixel).r;
+	imageStore(rt_guide_depth_image, p_pixel, vec4(depth));
 }
 
 void main() {
@@ -333,6 +346,9 @@ void main() {
 #ifdef RT_DEBUG_ENABLED
 	medium_enabled = medium_enabled && int(get_rt_param(RT_PARAM_VIS_MODE)) == 0;
 #endif
+	// Whether the medium's guides stand in for the primary surface, and their depth.
+	bool medium_guides = false;
+	float medium_guide_depth = 0.0;
 
 	// TODO: when we have a spp > 0 the first raycast is always identical,
 	// we should move it out of the loop
@@ -409,9 +425,10 @@ void main() {
 				ps.packed_bounces_flags = set_path_terminated(ps.packed_bounces_flags);
 			}
 			if (medium_enabled && primary_guides &&
-					rt_medium_write_primary_guides(ray_origin, unit_dir, (ps.hit_t >= 0.0 ? ps.hit_t : t_far) * ray_length)) {
+					rt_medium_write_primary_guides(ray_origin, unit_dir, (ps.hit_t >= 0.0 ? ps.hit_t : t_far) * ray_length, medium_guide_depth)) {
 				// The fog stands in for the surface, so no mirror replaces its guides.
 				ps.packed_bounces_flags &= ~DLSS_RR_REPLACE_PENDING_FLAG;
+				medium_guides = true;
 			}
 			if (medium_collision && (ps.hit_t < 0.0 || ps.hit_t > medium_t)) {
 				// The medium scattered before any surface: drop what the surface or the sky added.
@@ -589,6 +606,7 @@ void main() {
 		vec3 heat = (heat_x < 0.5) ? mix(vec3(0.0, 1.0, 0.0), vec3(1.0, 1.0, 0.0), heat_x * 2.0)
 								   : mix(vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 0.0), heat_x * 2.0 - 1.0);
 		imageStore(image, ivec2(pixel), vec4(heat, 1.0));
+		rt_write_guide_depth(ivec2(pixel), medium_guides, medium_guide_depth);
 		return;
 	}
 #endif
@@ -598,6 +616,7 @@ void main() {
 		// leave its velocity and DLSS-RR guides untouched.
 		imageStore(image, ivec2(pixel), texelFetch(sampler2D(prepass_color_texture, SAMPLER_NEAREST_CLAMP), ivec2(pixel), 0));
 		imageStore(rt_depth_image, ivec2(pixel), vec4(composite_prepass_depth));
+		rt_write_guide_depth(ivec2(pixel), true, composite_prepass_depth);
 #ifdef RT_TIMING_ENABLED
 		store_path_timing(ivec2(pixel), start_clock);
 #endif
@@ -606,6 +625,7 @@ void main() {
 
 	vec3 final_radiance = total_radiance / float(samples_per_pixel);
 	imageStore(image, ivec2(pixel), vec4(final_radiance, 1.0));
+	rt_write_guide_depth(ivec2(pixel), medium_guides, medium_guide_depth);
 #ifdef RT_TIMING_ENABLED
 	store_path_timing(ivec2(pixel), start_clock);
 #endif

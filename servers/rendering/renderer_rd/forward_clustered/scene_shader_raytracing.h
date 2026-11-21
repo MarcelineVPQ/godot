@@ -85,6 +85,7 @@ public:
 		RT_FLAG_TIMING_ENABLED = (1 << 6),
 		RT_FLAG_VOLUMETRIC_FOG_ENABLED = (1 << 7),
 		RT_FLAG_DECALS_ENABLED = (1 << 8), // rendering/pathtracing/max_decals > 0.
+		RT_FLAG_GUIDE_DEPTH_ENABLED = (1 << 9), // The viewport upscales with DLSS, which reads the guide depth.
 	};
 
 	// Sample count encoding (must match shader RT_SAMPLE_MODE_* defines).

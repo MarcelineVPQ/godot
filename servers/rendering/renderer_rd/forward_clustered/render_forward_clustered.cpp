@@ -1914,7 +1914,7 @@ void RenderForwardClustered::_render_3d_upscaling(const RenderDataRD *p_render_d
 			params.internal_size = rb->get_internal_size();
 			params.sharpness = CLAMP((rb->get_fsr_sharpness() / 2.0f), 0.0f, 1.0f);
 			params.color = rb->get_internal_texture(v);
-			params.depth = rb->get_depth_texture(v);
+			params.depth = p_dlss_rr.depth.is_valid() ? p_dlss_rr.depth : rb->get_depth_texture(v);
 			params.velocity = rb->get_velocity_buffer(false, v);
 			params.reactive = rb->get_internal_texture_reactive(v);
 			params.exposure = exposure;

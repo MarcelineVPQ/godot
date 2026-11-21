@@ -688,6 +688,27 @@ RID RenderRaytracing::rt_get_depth_texture(RenderSceneBuffersRD *p_render_buffer
 	return p_render_buffers->get_texture(RB_SCOPE_FORWARD_CLUSTERED, RB_TEX_RT_DEPTH);
 }
 
+void RenderRaytracing::rt_ensure_guide_depth_texture(RenderSceneBuffersRD *p_render_buffers) {
+	ERR_FAIL_NULL(p_render_buffers);
+	if (!p_render_buffers->has_texture(RB_SCOPE_RT_GUIDE_DEPTH, RB_TEX_RT_GUIDE_DEPTH)) {
+		p_render_buffers->create_texture(RB_SCOPE_RT_GUIDE_DEPTH, RB_TEX_RT_GUIDE_DEPTH, RD::DATA_FORMAT_R32_SFLOAT, RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT, RD::TEXTURE_SAMPLES_1);
+	}
+}
+
+void RenderRaytracing::rt_free_guide_depth_texture(RenderSceneBuffersRD *p_render_buffers) {
+	ERR_FAIL_NULL(p_render_buffers);
+	p_render_buffers->clear_context(RB_SCOPE_RT_GUIDE_DEPTH);
+}
+
+bool RenderRaytracing::rt_has_guide_depth_texture(RenderSceneBuffersRD *p_render_buffers) const {
+	return p_render_buffers && p_render_buffers->has_texture(RB_SCOPE_RT_GUIDE_DEPTH, RB_TEX_RT_GUIDE_DEPTH);
+}
+
+RID RenderRaytracing::rt_get_guide_depth_texture(RenderSceneBuffersRD *p_render_buffers) const {
+	ERR_FAIL_NULL_V(p_render_buffers, RID());
+	return p_render_buffers->get_texture(RB_SCOPE_RT_GUIDE_DEPTH, RB_TEX_RT_GUIDE_DEPTH);
+}
+
 void RenderRaytracing::rt_ensure_sky_texture(RenderSceneBuffersRD *p_render_buffers) {
 	ERR_FAIL_NULL(p_render_buffers);
 
@@ -6095,6 +6116,13 @@ RID RenderRaytracing::update_uniform_set(RTViewportState *p_state, const RenderD
 		u.uniform_type = RD::UNIFORM_TYPE_IMAGE;
 		u.append_id(rt_get_depth_texture(rb));
 		uniforms.push_back(u);
+	}
+
+	// Binding 46: the guide depth DLSS reads. Without RT_FLAG_GUIDE_DEPTH_ENABLED the shaders never write it, and the
+	// RT depth image stands in so the binding stays valid.
+	{
+		const bool guide_depth = (p_rt_flags & SceneShaderRaytracing::RT_FLAG_GUIDE_DEPTH_ENABLED) != 0 && rt_has_guide_depth_texture(rb);
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_IMAGE, 46, guide_depth ? rt_get_guide_depth_texture(rb) : rt_get_depth_texture(rb)));
 	}
 
 	// Bindings 16-27: Material samplers (12 filter/repeat combinations for custom shaders).

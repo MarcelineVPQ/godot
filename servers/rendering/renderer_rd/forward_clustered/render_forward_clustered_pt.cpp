@@ -269,6 +269,13 @@ void RenderForwardClusteredPT::_render_scene(RenderDataRD *p_render_data, const 
 			raytracing->dlss_rr_free_buffers(rb.ptr());
 		}
 
+		if (scale_type == SCALE_3D_DLSS) {
+			rt_flags |= SceneShaderRaytracing::RT_FLAG_GUIDE_DEPTH_ENABLED;
+			raytracing->rt_ensure_guide_depth_texture(rb.ptr());
+		} else if (raytracing->rt_has_guide_depth_texture(rb.ptr())) {
+			raytracing->rt_free_guide_depth_texture(rb.ptr());
+		}
+
 		// The uniform set is built here, ahead of the sky block, so the sky texture
 		// has to exist by now even though it is drawn into later this frame. Only
 		// worth it when the sky is actually the background: everything else already
@@ -463,6 +470,8 @@ void RenderForwardClusteredPT::_render_scene(RenderDataRD *p_render_data, const 
 #ifdef RT_VALIDATION_ENABLED
 	trace = trace && raytracing->rtv_validate_trace(rt_state);
 #endif
+	// DLSS reads the trace's guide depth only from a frame that wrote it.
+	const bool rt_guide_depth = trace && (rt_flags & SceneShaderRaytracing::RT_FLAG_GUIDE_DEPTH_ENABLED);
 	if (trace) {
 		RD::get_singleton()->draw_command_begin_label("Raytracing");
 		RENDER_TIMESTAMP("TLAS Build");
@@ -628,6 +637,9 @@ void RenderForwardClusteredPT::_render_scene(RenderDataRD *p_render_data, const 
 			dlss_rr_guides.specular_albedo = raytracing->dlss_rr_get_specular_albedo(rb.ptr());
 			dlss_rr_guides.normal_roughness = raytracing->dlss_rr_get_normal_roughness(rb.ptr());
 			dlss_rr_guides.specular_motion_vectors = raytracing->dlss_rr_get_specular_motion_vectors(rb.ptr());
+		}
+		if (rt_guide_depth) {
+			dlss_rr_guides.depth = raytracing->rt_get_guide_depth_texture(rb.ptr());
 		}
 		_render_3d_upscaling(p_render_data, scale_type, using_taa, time_step, dlss_rr_guides);
 	}
