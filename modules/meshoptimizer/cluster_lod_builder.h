@@ -33,4 +33,4 @@
 #include "core/templates/vector.h"
 
 // SurfaceTool::BuildClustersFunc, built on clusterlod.h.
-Vector<uint8_t> cluster_lod_build(const float *p_positions, const float *p_attributes, size_t p_vertex_count, const unsigned int *p_indices, size_t p_index_count);
+Vector<uint8_t> cluster_lod_build(const float *p_positions, const float *p_attributes, size_t p_vertex_count, const unsigned int *p_indices, size_t p_index_count, bool p_preserve_area);

@@ -51,8 +51,10 @@
 		</method>
 		<method name="generate_clusters">
 			<return type="void" />
+			<param index="0" name="preserve_area" type="bool" default="false" />
 			<description>
 				Bakes a cluster level-of-detail hierarchy for each triangle surface: the surface is split into clusters of at most 128 triangles, which are grouped and simplified level by level into a directed acyclic graph, with bounds and a simplification error per cluster. The path tracer traces surfaces that have clusters through cluster acceleration structures when [member ProjectSettings.rendering/pathtracing/cluster_geometry/enabled] is on. Raster rendering ignores them.
+				If [param preserve_area] is [code]true[/code], the error of each simplification also counts the surface area it drops, so a coarser level is only used once that lost area covers less than about a pixel. Use it for foliage and other meshes made of many small separate pieces, such as leaves: simplification removes those pieces with little positional error, and without it a plant turns into bare stems at a short distance. Solid meshes such as rocks don't need it: smoothing their surface loses area without changing what covers the screen, and they would keep their fine levels much further away.
 				Call this after any other processing that changes the surface arrays: [method generate_lods] discards the clusters, since they index vertices it may split. The result only depends on the surface arrays.
 			</description>
 		</method>

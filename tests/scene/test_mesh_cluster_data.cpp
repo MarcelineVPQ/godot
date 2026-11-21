@@ -86,7 +86,7 @@ static Grid make_grid(uint32_t p_size) {
 }
 
 static Vector<uint8_t> bake(const Grid &p_grid) {
-	return SurfaceTool::build_clusters_func(p_grid.positions.ptr(), p_grid.attributes.ptr(), p_grid.vertex_count, p_grid.indices.ptr(), p_grid.indices.size());
+	return SurfaceTool::build_clusters_func(p_grid.positions.ptr(), p_grid.attributes.ptr(), p_grid.vertex_count, p_grid.indices.ptr(), p_grid.indices.size(), false);
 }
 
 TEST_CASE("[SceneTree][MeshClusterData] Bake and read back") {

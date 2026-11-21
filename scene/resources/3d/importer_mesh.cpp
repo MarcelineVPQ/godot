@@ -964,7 +964,7 @@ void ImporterMesh::clear() {
 	mesh.unref();
 }
 
-void ImporterMesh::generate_clusters() {
+void ImporterMesh::generate_clusters(bool p_preserve_area) {
 	ERR_FAIL_NULL_MSG(SurfaceTool::build_clusters_func, "Generating clusters requires the meshoptimizer module.");
 
 	for (int i = 0; i < surfaces.size(); i++) {
@@ -1008,7 +1008,7 @@ void ImporterMesh::generate_clusters() {
 			ERR_FAIL_COND_MSG(triangle_indices[j] >= vertex_count, "Can't generate clusters: the surface has an index past its last vertex.");
 		}
 
-		surface.cluster_data = SurfaceTool::build_clusters_func(positions.ptr(), attributes.ptr(), vertex_count, triangle_indices.ptr(), index_count - index_count % 3);
+		surface.cluster_data = SurfaceTool::build_clusters_func(positions.ptr(), attributes.ptr(), vertex_count, triangle_indices.ptr(), index_count - index_count % 3, p_preserve_area);
 	}
 }
 
@@ -1639,7 +1639,7 @@ void ImporterMesh::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_surface_material", "surface_idx", "material"), &ImporterMesh::set_surface_material);
 
 	ClassDB::bind_method(D_METHOD("generate_lods", "normal_merge_angle", "normal_split_angle", "bone_transform_array"), &ImporterMesh::_generate_lods_bind);
-	ClassDB::bind_method(D_METHOD("generate_clusters"), &ImporterMesh::generate_clusters);
+	ClassDB::bind_method(D_METHOD("generate_clusters", "preserve_area"), &ImporterMesh::generate_clusters, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("get_mesh", "base_mesh"), &ImporterMesh::get_mesh, DEFVAL(Ref<ArrayMesh>()));
 	ClassDB::bind_static_method("ImporterMesh", D_METHOD("from_mesh", "mesh"), &ImporterMesh::from_mesh);
 	ClassDB::bind_method(D_METHOD("clear"), &ImporterMesh::clear);

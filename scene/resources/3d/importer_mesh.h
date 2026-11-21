@@ -119,7 +119,7 @@ public:
 	void optimize_indices();
 
 	void generate_lods(float p_normal_merge_angle, Array p_skin_pose_transform_array);
-	void generate_clusters();
+	void generate_clusters(bool p_preserve_area = false);
 
 	void create_shadow_mesh();
 	Ref<ImporterMesh> get_shadow_mesh() const;

@@ -36,6 +36,8 @@
 
 #include <thirdparty/meshoptimizer/clusterlod.h>
 
+#include <cfloat>
+
 using namespace MeshClusterData;
 
 template <typename T>
@@ -45,7 +47,63 @@ static void _append_bytes(Vector<uint8_t> &r_data, uint64_t &r_offset, const T *
 	r_offset += size;
 }
 
-Vector<uint8_t> cluster_lod_build(const float *p_positions, const float *p_attributes, size_t p_vertex_count, const unsigned int *p_indices, size_t p_index_count) {
+// Raises each group's error to account for the surface area its simplification drops, which the positional error
+// doesn't see: a leaf collapsed away is a tiny positional error, but foliage made of many leaves loses most of its
+// coverage that way, and a bush seen from a little further turns into bare stems. The area a group stands for is that of
+// the source triangles behind its clusters (shared out by area where a group was simplified into several clusters); the
+// area lost is what its simplified clusters lack of it. Lost area A seen from distance d covers about A / 2 / d^2 of the
+// view (the mean projection of a randomly turned flat patch), so an error of sqrt(A / 2) projects to the side of a square
+// of that coverage, and a cut within the threshold loses at most that many square pixels per group. Clusters are in the
+// order their groups were made, each group after the groups its clusters were simplified from, which keeps the DAG
+// monotonic as the errors are raised.
+static void _add_area_error(const float *p_positions, const LocalVector<uint8_t> &p_triangles, const LocalVector<uint32_t> &p_vertices, LocalVector<Group> &r_groups, LocalVector<Cluster> &r_clusters) {
+	LocalVector<double> cluster_area;
+	cluster_area.resize_initialized(r_clusters.size());
+	LocalVector<double> simplified_area; // Per group: the area of the clusters it was simplified into.
+	simplified_area.resize_initialized(r_groups.size());
+	for (uint32_t c = 0; c < r_clusters.size(); c++) {
+		const Cluster &cluster = r_clusters[c];
+		double area = 0.0;
+		for (uint32_t t = cluster.triangle_offset; t < cluster.triangle_offset + cluster.triangle_count; t++) {
+			Vector3 corners[3];
+			for (int k = 0; k < 3; k++) {
+				const float *p = p_positions + uint64_t(p_vertices[cluster.vertex_offset + p_triangles[t * 3 + k]]) * 3;
+				corners[k] = Vector3(p[0], p[1], p[2]);
+			}
+			area += 0.5 * double((corners[1] - corners[0]).cross(corners[2] - corners[0]).length());
+		}
+		cluster_area[c] = area;
+		if (cluster.refined >= 0) {
+			simplified_area[cluster.refined] += area;
+		}
+	}
+
+	LocalVector<double> source_area; // Per group: the source area its clusters stand for.
+	source_area.resize_initialized(r_groups.size());
+	for (uint32_t c = 0; c < r_clusters.size();) {
+		const uint32_t group = r_clusters[c].group;
+		for (; c < r_clusters.size() && r_clusters[c].group == group; c++) {
+			Cluster &cluster = r_clusters[c];
+			if (cluster.refined < 0) {
+				source_area[group] += cluster_area[c];
+				continue;
+			}
+			// The group it came from is final: its error was raised before any cluster made from it is reached.
+			cluster.error = r_groups[cluster.refined].error;
+			r_groups[group].error = MAX(r_groups[group].error, cluster.error);
+			if (simplified_area[cluster.refined] > 0.0) {
+				source_area[group] += source_area[cluster.refined] * cluster_area[c] / simplified_area[cluster.refined];
+			}
+		}
+		// Groups that weren't simplified further keep FLT_MAX; their clusters are never replaced.
+		if (r_groups[group].error < FLT_MAX) {
+			const double lost = MAX(0.0, source_area[group] - simplified_area[group]);
+			r_groups[group].error = MAX(r_groups[group].error, float(Math::sqrt(lost / 2.0)));
+		}
+	}
+}
+
+Vector<uint8_t> cluster_lod_build(const float *p_positions, const float *p_attributes, size_t p_vertex_count, const unsigned int *p_indices, size_t p_index_count, bool p_preserve_area) {
 	ERR_FAIL_COND_V(p_index_count == 0 || p_index_count % 3 != 0, Vector<uint8_t>());
 
 	// Normals steer simplification at the weight meshoptimizer suggests; UV seams are protected, not weighted.
@@ -112,6 +170,9 @@ Vector<uint8_t> cluster_lod_build(const float *p_positions, const float *p_attri
 	};
 	clodBuild(clodDefaultConfigRT(MAX_CLUSTER_TRIANGLES), mesh, output);
 	ERR_FAIL_COND_V(clusters.is_empty(), Vector<uint8_t>());
+	if (p_preserve_area) {
+		_add_area_error(p_positions, triangles, vertices, groups, clusters);
+	}
 
 	Header header;
 	header.cluster_count = clusters.size();

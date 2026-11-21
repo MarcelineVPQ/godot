@@ -2271,6 +2271,7 @@ void ResourceImporterScene::get_internal_import_options(InternalImportCategory p
 			r_options->push_back(ImportOption(PropertyInfo(Variant::INT, "generate/lods", PROPERTY_HINT_ENUM, "Default,Enable,Disable"), 0));
 			r_options->push_back(ImportOption(PropertyInfo(Variant::FLOAT, "lods/normal_merge_angle", PROPERTY_HINT_RANGE, "0,180,1,degrees"), 20.0f));
 			r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "generate/clusters"), false));
+			r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "clusters/preserve_area"), false));
 		} break;
 		case INTERNAL_IMPORT_CATEGORY_MATERIAL: {
 			r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "use_external/enabled", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), false));
@@ -2714,6 +2715,7 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 
 				bool generate_lods = p_generate_lods;
 				bool generate_clusters = false;
+				bool clusters_preserve_area = false;
 				float merge_angle = 20.0f;
 				bool create_shadow_meshes = p_create_shadow_meshes;
 				bool bake_lightmaps = p_light_bake_mode == LIGHT_BAKE_STATIC_LIGHTMAPS;
@@ -2766,6 +2768,7 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 					}
 
 					generate_clusters = mesh_settings.get("generate/clusters", false);
+					clusters_preserve_area = mesh_settings.get("clusters/preserve_area", false);
 
 					if (bool(mesh_settings.get("save_to_file/enabled", false))) {
 						save_to_file = mesh_settings.get("save_to_file/path", String());
@@ -2824,7 +2827,7 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 
 				// Last: the clusters index the final vertex arrays.
 				if (generate_clusters) {
-					importer_mesh->generate_clusters();
+					importer_mesh->generate_clusters(clusters_preserve_area);
 				}
 
 				if (!save_to_file.is_empty()) {
