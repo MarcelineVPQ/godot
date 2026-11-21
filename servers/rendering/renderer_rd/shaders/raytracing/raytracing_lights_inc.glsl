@@ -313,17 +313,17 @@ vec3 lights_trace_shadow_ray(vec3 origin, vec3 direction, float max_dist, uint p
 }
 
 // Shadow transmittance from origin towards the light, blended towards 1 by the light's shadow opacity, times the
-// transmittance of the fog world grid's medium. Skips the trace when the path tracer draws no shadow for this light;
-// the medium still dims it, as that is the light's own path rather than a shadow. p_receiver_shadow_mask filters the
-// light's caster groups.
+// transmittance of the medium (FogVolumes and global fog). Skips the trace when the path tracer draws no shadow for
+// this light; the medium still dims it, as that is the light's own path rather than a shadow. p_receiver_shadow_mask
+// filters the light's caster groups.
 vec3 lights_shadow_transmittance(RTLightData light, vec3 origin, vec3 direction, float max_dist, uint p_receiver_shadow_mask, inout uint rng_state) {
 	vec3 transmittance = vec3(1.0);
 	if (light.shadow_opacity > 0.001) {
 		vec3 traced = lights_trace_shadow_ray(origin, direction, max_dist, (light.light_masks >> 24u) & p_receiver_shadow_mask, rng_state);
 		transmittance = mix(vec3(1.0), traced, light.shadow_opacity);
 	}
-	if (rt_fog_world_grid_transport_enabled() && any(greaterThan(transmittance, vec3(0.0)))) {
-		transmittance *= rt_fog_world_grid_transmittance(origin, direction, max_dist, rng_state);
+	if (rt_medium_enabled() && any(greaterThan(transmittance, vec3(0.0)))) {
+		transmittance *= rt_medium_transmittance(origin, direction, max_dist, rng_state);
 	}
 	return transmittance;
 }

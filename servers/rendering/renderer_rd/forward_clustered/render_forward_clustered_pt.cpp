@@ -872,10 +872,11 @@ void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_
 	} else {
 		RendererRD::Fog::volumetric_fog_world_grid_free_unused(rb.ptr());
 	}
-	// With light transport through the world grid, FogVolumes are traced there only. The froxels keep the
-	// Environment's global fog, which the grid doesn't hold, for camera segments.
-	const bool world_grid_transport = world_grid_transport_setting && RendererRD::Fog::get_active_world_grid(rb.ptr(), p_render_data->environment).is_valid();
-	const PagedArray<RID> no_fog_volumes;
+	if (world_grid_transport_setting) {
+		// With light transport, the FogVolumes and the Environment's global fog are one medium that every path segment
+		// is traced through, so the path tracer doesn't use the froxels. They are kept for the reason above.
+		return;
+	}
 
 	// Shadow maps aren't rendered when path tracing, so there is no raster fallback.
 	RendererRD::Fog::VolumetricFogRayQueryShadows ray_query_shadows;
@@ -886,7 +887,7 @@ void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_
 
 	gi.setup_voxel_gi_instances(p_render_data, rb, p_render_data->scene_data->cam_transform, *p_render_data->voxel_gi_instances, p_render_data->voxel_gi_count);
 
-	_update_volumetric_fog(rb, p_render_data->environment, p_render_data->scene_data->cam_projection, p_render_data->scene_data->cam_transform, p_render_data->scene_data->prev_cam_transform.affine_inverse(), RID(), p_directional_light_count, false, p_positional_light_count, p_render_data->voxel_gi_count, world_grid_transport ? no_fog_volumes : *p_render_data->fog_volumes, &ray_query_shadows);
+	_update_volumetric_fog(rb, p_render_data->environment, p_render_data->scene_data->cam_projection, p_render_data->scene_data->cam_transform, p_render_data->scene_data->prev_cam_transform.affine_inverse(), RID(), p_directional_light_count, false, p_positional_light_count, p_render_data->voxel_gi_count, *p_render_data->fog_volumes, &ray_query_shadows);
 }
 
 void RenderForwardClusteredPT::_age_out_motion_vectors(const RenderDataRD *p_render_data) {

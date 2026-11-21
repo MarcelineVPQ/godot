@@ -549,7 +549,12 @@ static RTViewportStateKey _viewport_state_key(const RenderDataRD *p_render_data)
 			p_render_data->render_buffers.ptr(), p_render_data->viewport, p_render_data->environment);
 }
 
+// The froxels, which the path tracer doesn't use with light transport through the medium: the global fog is then part
+// of the medium.
 static Ref<RendererRD::Fog::VolumetricFog> _rt_get_volumetric_fog(const RenderDataRD *p_render_data) {
+	if (GLOBAL_GET_CACHED(bool, "rendering/pathtracing/volumetric_fog_world_grid_transport")) {
+		return Ref<RendererRD::Fog::VolumetricFog>();
+	}
 	Ref<RendererRD::Fog::VolumetricFog> fog = RendererRD::Fog::get_active(p_render_data->render_buffers.ptr(), p_render_data->environment);
 	return fog.is_valid() && fog->fog_map.is_valid() ? fog : Ref<RendererRD::Fog::VolumetricFog>();
 }
@@ -5902,7 +5907,6 @@ RID RenderRaytracing::update_uniform_set(RTViewportState *p_state, const RenderD
 			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_ORIGIN_Y] = fog_grid->origin.y;
 			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_ORIGIN_Z] = fog_grid->origin.z;
 			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_VOXEL_SIZE] = fog_grid->voxel_size;
-			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_ANISOTROPY] = RendererEnvironmentStorage::get_singleton()->environment_get_volumetric_fog_anisotropy(p_render_data->environment);
 			if (GLOBAL_GET_CACHED(bool, "rendering/pathtracing/volumetric_fog_world_grid_transport")) {
 				rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_X] = fog_grid->occupied_min.x;
 				rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_Y] = fog_grid->occupied_min.y;
@@ -5911,6 +5915,24 @@ RID RenderRaytracing::update_uniform_set(RTViewportState *p_state, const RenderD
 				rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Y] = fog_grid->occupied_max.y;
 				rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Z] = fog_grid->occupied_max.z;
 			}
+		}
+
+		// With light transport, the Environment's global volumetric fog is traced as part of the medium, which scatters
+		// with its anisotropy.
+		RID fog_env = p_render_data->environment;
+		RendererEnvironmentStorage *fog_env_storage = RendererEnvironmentStorage::get_singleton();
+		if (GLOBAL_GET_CACHED(bool, "rendering/pathtracing/volumetric_fog_world_grid_transport") && fog_env.is_valid() && fog_env_storage->environment_get_volumetric_fog_enabled(fog_env)) {
+			const Color albedo = fog_env_storage->environment_get_volumetric_fog_scattering(fog_env).srgb_to_linear();
+			const Color emission = fog_env_storage->environment_get_volumetric_fog_emission(fog_env).srgb_to_linear() * fog_env_storage->environment_get_volumetric_fog_emission_energy(fog_env);
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_GLOBAL_DENSITY] = MAX(fog_env_storage->environment_get_volumetric_fog_density(fog_env), 0.0f);
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_GLOBAL_LENGTH] = fog_env_storage->environment_get_volumetric_fog_length(fog_env);
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_GLOBAL_ALBEDO_R] = albedo.r;
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_GLOBAL_ALBEDO_G] = albedo.g;
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_GLOBAL_ALBEDO_B] = albedo.b;
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_GLOBAL_EMISSION_R] = emission.r;
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_GLOBAL_EMISSION_G] = emission.g;
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_GLOBAL_EMISSION_B] = emission.b;
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_ANISOTROPY] = fog_env_storage->environment_get_volumetric_fog_anisotropy(fog_env);
 		}
 
 		// --- Light gathering ---

@@ -61,6 +61,14 @@
 #define RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_X 31 // rt_params[7].w
 #define RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Y 32 // rt_params[8].x
 #define RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Z 33 // rt_params[8].y
+#define RT_PARAM_FOG_GLOBAL_DENSITY 34 // rt_params[8].z - the Environment's volumetric fog in the medium, 0 = none
+#define RT_PARAM_FOG_GLOBAL_LENGTH 35 // rt_params[8].w - its radius around the camera
+#define RT_PARAM_FOG_GLOBAL_ALBEDO_R 36 // rt_params[9].x
+#define RT_PARAM_FOG_GLOBAL_ALBEDO_G 37 // rt_params[9].y
+#define RT_PARAM_FOG_GLOBAL_ALBEDO_B 38 // rt_params[9].z
+#define RT_PARAM_FOG_GLOBAL_EMISSION_R 39 // rt_params[9].w - emitted radiance per meter over the density
+#define RT_PARAM_FOG_GLOBAL_EMISSION_G 40 // rt_params[10].x
+#define RT_PARAM_FOG_GLOBAL_EMISSION_B 41 // rt_params[10].y
 // RT_PARAM_VIS_MODE values. Must match Environment::PathtracingDebugMode.
 #define RT_VIS_TRANSPARENCY_LAYERS 23
 #define RT_VIS_DYNAMIC_GEOMETRY 29

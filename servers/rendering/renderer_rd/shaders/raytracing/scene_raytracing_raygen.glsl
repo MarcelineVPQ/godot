@@ -219,11 +219,11 @@ vec3 rt_medium_light(RTLightData p_light, vec3 p_pos, vec3 p_dir, float p_g, boo
 	return incoming * shadow * rt_medium_phase(dot(L, p_dir), p_g) * energy;
 }
 
-// A real collision with the medium at p_pos on the unit view ray p_dir, p_t along the traced ray: its emission and the
+// A real collision with p_medium at p_pos on the unit view ray p_dir, p_t along the traced ray: its emission and the
 // light of one light scatter towards the path, which then continues in a phase-sampled direction while it may bounce.
 // Like a diffuse bounce, it makes later light indirect.
-void rt_medium_scatter(inout PathState r_ps, vec3 p_pos, vec3 p_dir, float p_t) {
-	RTFogWorldGridSample medium = rt_fog_world_grid_sample(p_pos);
+void rt_medium_scatter(inout PathState r_ps, vec3 p_pos, vec3 p_dir, float p_t, RTFogWorldGridSample p_medium) {
+	RTFogWorldGridSample medium = p_medium;
 	float g = get_rt_param(RT_PARAM_FOG_WORLD_GRID_ANISOTROPY);
 	uint diffuse_bounces = get_diffuse_bounces(r_ps.packed_bounces_flags);
 
@@ -254,8 +254,7 @@ void rt_medium_scatter(inout PathState r_ps, vec3 p_pos, vec3 p_dir, float p_t) 
 // fog at the point where its transmittance falls to one half, facing the camera. Unlike the scatter events, that point
 // doesn't change with the samples, so the guides don't flicker. p_dir is unit, p_t_end in meters. Returns true if it wrote.
 bool rt_medium_write_primary_guides(vec3 p_origin, vec3 p_dir, float p_t_end) {
-	float t_half;
-	rt_fog_world_grid_march(p_origin, p_dir, p_t_end, rt_fog_world_grid_occupied_min(), rt_fog_world_grid_occupied_max(), 0.693147, t_half);
+	float t_half = rt_medium_depth_distance(p_origin, p_dir, p_t_end, 0.693147);
 	if (t_half < 0.0) {
 		return false;
 	}
@@ -266,7 +265,7 @@ bool rt_medium_write_primary_guides(vec3 p_origin, vec3 p_dir, float p_t_end) {
 	imageStore(rt_velocity_image, pixel, vec4(motion, 0.0, 0.0));
 #ifdef DLSS_RR_ENABLED
 	dlss_rr_write_specular_motion_vector(motion);
-	dlss_rr_write_albedo_guides(rt_fog_world_grid_sample(pos).albedo, vec3(0.0));
+	dlss_rr_write_albedo_guides(rt_medium_sample(pos).albedo, vec3(0.0));
 	imageStore(dlss_rr_normal_roughness, pixel, vec4(-p_dir, 1.0));
 #endif
 	return true;
@@ -324,7 +323,7 @@ void main() {
 
 	const uint max_bounces = RT_GET_MAX_BOUNCES();
 
-	bool medium_enabled = rt_fog_world_grid_transport_enabled();
+	bool medium_enabled = rt_medium_enabled();
 #ifdef RT_DEBUG_ENABLED
 	medium_enabled = medium_enabled && int(get_rt_param(RT_PARAM_VIS_MODE)) == 0;
 #endif
@@ -366,8 +365,9 @@ void main() {
 			float medium_t = 0.0;
 			bool medium_collision = false;
 			float medium_weight = 1.0;
+			RTFogWorldGridSample medium;
 			if (medium_enabled) {
-				medium_weight = rt_fog_world_grid_free_flight(ray_origin, unit_dir, t_far * ray_length, ps.rng_state, medium_collision, medium_t);
+				medium_weight = rt_medium_free_flight(ray_origin, unit_dir, t_far * ray_length, ps.rng_state, medium_collision, medium_t, medium);
 				ps.throughput *= medium_weight;
 				throughput_entry = ps.throughput;
 			}
@@ -406,7 +406,7 @@ void main() {
 				ps.radiance = radiance_pre;
 				ps.throughput = throughput_entry;
 				ps.packed_bounces_flags = flags_entry;
-				rt_medium_scatter(ps, ray_origin + ray_dir * medium_t, unit_dir, medium_t);
+				rt_medium_scatter(ps, ray_origin + ray_dir * medium_t, unit_dir, medium_t, medium);
 			}
 #ifdef DLSS_RR_ENABLED
 			if (bounce == 0u && (ps.packed_bounces_flags & DLSS_RR_REPLACE_PENDING_FLAG) != 0u) {
