@@ -43,6 +43,10 @@
 #define RT_PARAM_MAX_TRANSPARENCY_LAYERS_INDIRECT 20 // rt_params[5].x - peel budget on other indirect segments
 #define RT_PARAM_SELF_SHADOW_MASK 21 // rt_params[5].y - TLAS shadow group bit of SELF_SHADOWING casters (0 = none)
 #define RT_PARAM_VOLUMETRIC_FOG_SAMPLING 22 // rt_params[5].z - VOLUMETRIC_FOG_SAMPLING_* froxel lookup filter
+#define RT_PARAM_FOG_WORLD_GRID_ORIGIN_X 23 // rt_params[5].w - world position of the fog world grid's corner
+#define RT_PARAM_FOG_WORLD_GRID_ORIGIN_Y 24 // rt_params[6].x
+#define RT_PARAM_FOG_WORLD_GRID_ORIGIN_Z 25 // rt_params[6].y
+#define RT_PARAM_FOG_WORLD_GRID_VOXEL_SIZE 26 // rt_params[6].z - 0 = no world grid
 // RT_PARAM_VIS_MODE values. Must match Environment::PathtracingDebugMode.
 #define RT_VIS_TRANSPARENCY_LAYERS 23
 #define RT_VIS_DYNAMIC_GEOMETRY 29

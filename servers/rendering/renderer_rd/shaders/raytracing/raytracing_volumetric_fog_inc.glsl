@@ -2,6 +2,7 @@
 // camera frustum, so only camera segments (bounce 0) can sample it.
 
 #include "../volumetric_fog_sampling_inc.glsl"
+#include "raytracing_fog_world_grid_inc.glsl"
 
 layout(set = 0, binding = 35) uniform texture3D rt_volumetric_fog_texture;
 layout(set = 0, binding = 41) uniform texture2DArray rt_volumetric_fog_noise;

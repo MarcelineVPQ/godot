@@ -5750,6 +5750,14 @@ RID RenderRaytracing::update_uniform_set(RTViewportState *p_state, const RenderD
 		}
 		rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_USE_LEGACY_BLENDING] = owner->fog_use_legacy_blending_get() ? 1.0 : 0.0;
 
+		Ref<RendererRD::Fog::VolumetricFogWorldGrid> fog_grid = RendererRD::Fog::get_active_world_grid(p_render_data->render_buffers.ptr(), p_render_data->environment);
+		if (fog_grid.is_valid()) {
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_ORIGIN_X] = fog_grid->origin.x;
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_ORIGIN_Y] = fog_grid->origin.y;
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_ORIGIN_Z] = fog_grid->origin.z;
+			rt_ubo.params[SceneShaderRaytracing::RT_PARAM_FOG_WORLD_GRID_VOXEL_SIZE] = fog_grid->voxel_size;
+		}
+
 		// --- Light gathering ---
 		uint32_t rt_light_count = 0;
 		RT_LightData rt_light_data[RT_LIGHTS_MAX] = {};
@@ -5971,6 +5979,15 @@ RID RenderRaytracing::update_uniform_set(RTViewportState *p_state, const RenderD
 		u.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
 		u.append_id(owner->volumetric_fog_noise_get_texture());
 		uniforms.push_back(u);
+	}
+
+	// Bindings 42-44: the FogVolume world grid (density, scattering, emission), or an empty map.
+	{
+		Ref<RendererRD::Fog::VolumetricFogWorldGrid> fog_grid = RendererRD::Fog::get_active_world_grid(rb, p_render_data->environment);
+		RID empty_map = RendererRD::Fog::get_singleton()->get_world_grid_empty_map();
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 42, fog_grid.is_valid() ? fog_grid->density_map : empty_map));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 43, fog_grid.is_valid() ? fog_grid->light_map : empty_map));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 44, fog_grid.is_valid() ? fog_grid->emissive_map : empty_map));
 	}
 
 	if (p_rt_flags & SceneShaderRaytracing::RT_FLAG_TIMING_ENABLED) {
