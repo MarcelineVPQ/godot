@@ -394,6 +394,8 @@ static void check_environment() {
 		fog_modes.push_back(group + "#define MODE_WORLD_GRID\n");
 	}
 	check<VolumetricFogShaderRD>("volumetric_fog", fog_modes, "#define SAMPLERS_BINDING_FIRST_INDEX 3\n");
+	// Devices that add floats atomically in images sum the world grid's emission as floats.
+	check<VolumetricFogShaderRD>("volumetric_fog (float emission)", fog_modes, "#define SAMPLERS_BINDING_FIRST_INDEX 3\n#define WORLD_GRID_FLOAT_EMISSION\n");
 	const String process_defines = "\n#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS 8\n" + roughness_defines.replace("MAX_ROUGHNESS_LOD", "MAX_SKY_LOD");
 	Vector<String> process_modes;
 	Vector<String> ray_query_modes;
@@ -527,16 +529,14 @@ static String inject_define(const String &p_source, const String &p_define) {
 	return version < 0 ? p_source : p_source.insert(p_source.find("\n", version) + 1, p_define);
 }
 
-static void check_path_tracer() {
-	check<MultimeshMergeShaderRD>("multimesh_merge", { "\n", "\n#define MODE_INDEXED\n" });
-
-	// SceneShaderRaytracing: each raygen mode (DLSS RR, SER, ray-query shadows) with each set of defines the pipeline
-	// adds from its flags (debug views, timing, decals). The intersection stage is a template for procedural hit groups
-	// with material code; the base pipeline leaves it out.
+// SceneShaderRaytracing: each raygen mode (DLSS RR, SER, ray-query shadows) with each set of defines the pipeline adds
+// from its flags (debug views, timing, decals). The intersection stage is a template for procedural hit groups with
+// material code; the base pipeline leaves it out. p_extra_defines are general defines the renderer adds by device.
+static void check_raygen(const String &p_name, const String &p_extra_defines) {
 	const Vector<String> raygen_modes = flag_combinations({ "#define DLSS_RR_ENABLED\n", "#define USE_SER\n", "#define USE_RAY_QUERY_SHADOWS\n" });
 	const Vector<String> pipeline_defines = flag_combinations({ "#define RT_DEBUG_ENABLED\n", "#define RT_TIMING_ENABLED\n", "#define RT_DECALS_ENABLED\n" });
 	SceneRaytracingRaygenShaderRD raygen;
-	raygen.initialize(raygen_modes, "\n#define RT 1\n" + roughness_defines + "\n#define RT_PARAM_COUNT " + itos(RendererSceneRenderImplementation::SceneShaderRaytracing::RT_PARAM_COUNT) + "\n");
+	raygen.initialize(raygen_modes, "\n#define RT 1\n" + roughness_defines + "\n#define RT_PARAM_COUNT " + itos(RendererSceneRenderImplementation::SceneShaderRaytracing::RT_PARAM_COUNT) + "\n" + p_extra_defines);
 	const RID version = raygen.version_create(false);
 	for (int mode = 0; mode < raygen_modes.size(); mode++) {
 		const Vector<String> base_sources = raygen.version_build_variant_stage_sources(version, mode);
@@ -546,10 +546,16 @@ static void check_path_tracer() {
 				sources.write[stage] = inject_define(inject_define(sources[stage], pipeline_defines[i]), "#define ENABLE_INTERSECTION_SHADERS\n");
 			}
 			sources.write[RD::SHADER_STAGE_INTERSECTION] = String();
-			compile_stages(vformat("scene_raytracing_raygen (pipeline defines %d)", i), mode, sources);
+			compile_stages(vformat("%s (pipeline defines %d)", p_name, i), mode, sources);
 		}
 	}
 	raygen.version_free(version);
+}
+
+static void check_path_tracer() {
+	check<MultimeshMergeShaderRD>("multimesh_merge", { "\n", "\n#define MODE_INDEXED\n" });
+	check_raygen("scene_raytracing_raygen", String());
+	check_raygen("scene_raytracing_raygen (float fog emission)", "\n#define FOG_WORLD_GRID_FLOAT_EMISSION\n");
 }
 
 TEST_CASE("[ShaderRD] The variant check reports a clash between included blocks") {

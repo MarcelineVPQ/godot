@@ -150,6 +150,10 @@ private:
 		RID default_shader_rd;
 		RID default_world_grid_shader_rd; // Set when the world grid group is first enabled.
 		RID world_grid_empty_map; // 1x1x1 zero R32_UINT, bound when there is no world grid.
+		RID world_grid_empty_emission_map; // The same in the emission map's format.
+		// The world grid sums emission as floats (WORLD_GRID_FLOAT_EMISSION) where the device can add them atomically
+		// in a storage image, and in fixed point otherwise.
+		bool world_grid_float_emission = false;
 
 		// Brick majorants of the world grid, compiled on first use.
 		VolumetricFogWorldGridMajorantShaderRD world_grid_majorant_shader;
@@ -387,7 +391,7 @@ public:
 
 		RID density_map;
 		RID light_map; // Scattering, size.z * 3 deep.
-		RID emissive_map; // Emission, size.z * 3 deep.
+		RID emissive_map; // Emission, size.z * 3 deep: R32F with float emission, else R32UI fixed point.
 		RID majorant_map; // Highest density of each brick of WORLD_GRID_BRICK_SIZE^3 voxels.
 
 		// Voxel box holding this frame's FogVolumes, empty when there are none.
@@ -401,7 +405,7 @@ public:
 		virtual void configure(RenderSceneBuffersRD *p_render_buffers) override {}
 		virtual void free_data() override {}
 
-		void init(const Vector3i &p_size);
+		void init(const Vector3i &p_size, bool p_float_emission);
 		~VolumetricFogWorldGrid();
 	};
 
@@ -419,6 +423,8 @@ public:
 	/// World grid to sample this frame, null when p_environment disables volumetric fog.
 	static Ref<VolumetricFogWorldGrid> get_active_world_grid(RenderSceneBuffersRD *p_render_buffers, RID p_environment);
 	RID get_world_grid_empty_map() const { return volumetric_fog.world_grid_empty_map; }
+	RID get_world_grid_empty_emission_map() const { return volumetric_fog.world_grid_empty_emission_map; }
+	bool is_world_grid_float_emission() const { return volumetric_fog.world_grid_float_emission; }
 
 	/// Fills the world grid of p_render_buffers (creating it if needed) around p_cam_transform from the fog volumes.
 	void volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffers, const Transform3D &p_cam_transform, double p_time, const PagedArray<RID> &p_fog_volumes);

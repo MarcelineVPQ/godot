@@ -596,6 +596,7 @@ Error RenderingDeviceDriverVulkan::_initialize_device_extensions() {
 	_register_requested_device_extension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_KHR_SHADER_CLOCK_EXTENSION_NAME, false);
+	_register_requested_device_extension(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME, false); // Required by VK_KHR_ray_tracing_pipeline when using pipeline libraries.
 	_register_requested_device_extension(VK_KHR_RAY_QUERY_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME, false);
@@ -945,6 +946,7 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 		VkPhysicalDeviceVulkan12Features device_features_vk_1_2 = {};
 		VkPhysicalDeviceShaderFloat16Int8FeaturesKHR shader_features = {};
 		VkPhysicalDeviceShaderClockFeaturesKHR shader_clock_features = {};
+		VkPhysicalDeviceShaderAtomicFloatFeaturesEXT shader_atomic_float_features = {};
 		VkPhysicalDeviceBufferDeviceAddressFeaturesKHR buffer_device_address_features = {};
 		VkPhysicalDeviceVulkanMemoryModelFeaturesKHR vulkan_memory_model_features = {};
 		VkPhysicalDeviceFragmentShadingRateFeaturesKHR fsr_features = {};
@@ -1044,6 +1046,12 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 			shader_clock_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR;
 			shader_clock_features.pNext = next_features;
 			next_features = &shader_clock_features;
+		}
+
+		if (enabled_device_extension_names.has(VK_EXT_SHADER_ATOMIC_FLOAT_EXTENSION_NAME)) {
+			shader_atomic_float_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT;
+			shader_atomic_float_features.pNext = next_features;
+			next_features = &shader_atomic_float_features;
 		}
 
 		if (enabled_device_extension_names.has(VK_KHR_RAY_QUERY_EXTENSION_NAME)) {
@@ -1185,6 +1193,7 @@ Error RenderingDeviceDriverVulkan::_check_device_capabilities() {
 			cluster_acceleration_structure_capabilities.support = acceleration_structure_capabilities.acceleration_structure_support && cluster_acceleration_structure_features.clusterAccelerationStructure;
 		}
 		shader_capabilities.shader_device_clock_is_supported = shader_clock_features.shaderDeviceClock;
+		shader_capabilities.shader_image_float32_atomic_add_is_supported = shader_atomic_float_features.shaderImageFloat32AtomicAdd;
 	}
 
 	if (functions.GetPhysicalDeviceProperties2 != nullptr) {
@@ -1564,6 +1573,14 @@ Error RenderingDeviceDriverVulkan::_initialize_device(const LocalVector<VkDevice
 		shader_clock_features.pNext = create_info_next;
 		shader_clock_features.shaderDeviceClock = VK_TRUE;
 		create_info_next = &shader_clock_features;
+	}
+
+	VkPhysicalDeviceShaderAtomicFloatFeaturesEXT shader_atomic_float_features = {};
+	if (shader_capabilities.shader_image_float32_atomic_add_is_supported) {
+		shader_atomic_float_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT;
+		shader_atomic_float_features.pNext = create_info_next;
+		shader_atomic_float_features.shaderImageFloat32AtomicAdd = VK_TRUE;
+		create_info_next = &shader_atomic_float_features;
 	}
 
 	VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features = {};
@@ -8246,6 +8263,8 @@ bool RenderingDeviceDriverVulkan::has_feature(Features p_feature) {
 			return shader_capabilities.shader_device_clock_is_supported;
 		case SUPPORTS_VERTEX_PIPELINE_STORES:
 			return physical_device_features.vertexPipelineStoresAndAtomics;
+		case SUPPORTS_IMAGE_ATOMIC_FLOAT_ADD:
+			return shader_capabilities.shader_image_float32_atomic_add_is_supported;
 		default:
 			return false;
 	}

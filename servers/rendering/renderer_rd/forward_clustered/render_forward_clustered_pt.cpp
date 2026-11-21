@@ -695,6 +695,9 @@ bool RenderForwardClusteredPT::_setup_rt() {
 		rt_defines += "\n#define RT 1\n";
 		rt_defines += "\n#define MAX_ROUGHNESS_LOD " + itos(get_roughness_layers() - 1) + ".0\n";
 		rt_defines += "\n#define RT_PARAM_COUNT " + itos(SceneShaderRaytracing::RT_PARAM_COUNT) + "\n";
+		if (RendererRD::Fog::get_singleton()->is_world_grid_float_emission()) {
+			rt_defines += "\n#define FOG_WORLD_GRID_FLOAT_EMISSION\n";
+		}
 		if (is_using_radiance_octmap_array()) {
 			rt_defines += "\n#define USE_RADIANCE_OCTMAP_ARRAY \n";
 		}

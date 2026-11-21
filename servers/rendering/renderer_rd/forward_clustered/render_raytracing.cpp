@@ -6198,7 +6198,7 @@ RID RenderRaytracing::update_uniform_set(RTViewportState *p_state, const RenderD
 		RID empty_map = RendererRD::Fog::get_singleton()->get_world_grid_empty_map();
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 42, fog_grid.is_valid() ? fog_grid->density_map : empty_map));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 43, fog_grid.is_valid() ? fog_grid->light_map : empty_map));
-		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 44, fog_grid.is_valid() ? fog_grid->emissive_map : empty_map));
+		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 44, fog_grid.is_valid() ? fog_grid->emissive_map : RendererRD::Fog::get_singleton()->get_world_grid_empty_emission_map()));
 		uniforms.push_back(RD::Uniform(RD::UNIFORM_TYPE_TEXTURE, 45, fog_grid.is_valid() ? fog_grid->majorant_map : empty_map));
 	}
 

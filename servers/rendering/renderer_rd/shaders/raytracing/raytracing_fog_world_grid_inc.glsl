@@ -1,13 +1,17 @@
 // World-space fog grid lookups for the path tracer. Fog::volumetric_fog_world_grid_update() renders the FogVolumes
 // into a world-aligned grid around the camera, so unlike the froxels any path segment can sample it.
 // The maps hold signed fixed-point sums (see MODE_WORLD_GRID in volumetric_fog.glsl): the extinction, and per colour
-// channel the scattering coefficient at RT_FOG_WORLD_GRID_SCALE and the emitted radiance per meter at
-// RT_FOG_WORLD_GRID_EMISSION_SCALE. The scattering and emission maps hold one slab of the grid's size per channel,
-// stacked along z.
+// channel the scattering coefficient at RT_FOG_WORLD_GRID_SCALE and the emitted radiance per meter, as floats with
+// FOG_WORLD_GRID_FLOAT_EMISSION, else at RT_FOG_WORLD_GRID_EMISSION_SCALE. The scattering and emission maps hold one
+// slab of the grid's size per channel, stacked along z.
 
 layout(set = 0, binding = 42) uniform utexture3D rt_fog_world_grid_density;
 layout(set = 0, binding = 43) uniform utexture3D rt_fog_world_grid_scattering;
+#ifdef FOG_WORLD_GRID_FLOAT_EMISSION
+layout(set = 0, binding = 44) uniform texture3D rt_fog_world_grid_emission;
+#else
 layout(set = 0, binding = 44) uniform utexture3D rt_fog_world_grid_emission;
+#endif
 // Highest density of each brick of RT_FOG_WORLD_GRID_BRICK_SIZE^3 voxels, packed like the density map.
 layout(set = 0, binding = 45) uniform utexture3D rt_fog_world_grid_majorant;
 
@@ -106,7 +110,11 @@ RTFogWorldGridSample rt_fog_world_grid_sample_voxel(ivec3 p_voxel) {
 	for (int c = 0; c < 3; c++) {
 		ivec3 texel = ivec3(p_voxel.xy, p_voxel.z + c * rt_fog_world_grid_size().z);
 		scattering[c] = rt_fog_world_grid_unpack(texelFetch(usampler3D(rt_fog_world_grid_scattering, SAMPLER_NEAREST_CLAMP), texel, 0).x);
+#ifdef FOG_WORLD_GRID_FLOAT_EMISSION
+		s.emission[c] = max(0.0, texelFetch(sampler3D(rt_fog_world_grid_emission, SAMPLER_NEAREST_CLAMP), texel, 0).x);
+#else
 		s.emission[c] = rt_fog_world_grid_unpack(texelFetch(usampler3D(rt_fog_world_grid_emission, SAMPLER_NEAREST_CLAMP), texel, 0).x, RT_FOG_WORLD_GRID_EMISSION_SCALE);
+#endif
 	}
 	// Overlapping volumes add up, so this is their extinction-weighted mix of ALBEDO.
 	s.albedo = s.extinction > 0.0 ? clamp(scattering / s.extinction, vec3(0.0), vec3(1.0)) : vec3(0.0);

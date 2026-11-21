@@ -8,16 +8,21 @@
 #pragma use_vulkan_memory_model
 #endif
 
+#if defined(MODE_WORLD_GRID) && defined(WORLD_GRID_FLOAT_EMISSION)
+#extension GL_EXT_shader_atomic_float : require
+#endif
+
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
 #ifdef MODE_WORLD_GRID
 // Fixed point of the world grid's maps: finer than the froxels', so thin media keep their albedo. Sums up to 131072
 // per meter fit. Must match RT_FOG_WORLD_GRID_SCALE in raytracing_fog_world_grid_inc.glsl.
 #define DENSITY_SCALE 16384.0
-// Emission gets its own fixed point, coarser so bright HDR sources such as flames fit: EMISSION * DENSITY up to about
-// 524000 per meter and channel, in steps of 1/4096. Each volume's share saturates there instead of wrapping around;
-// the sum of overlapping volumes must stay within it too. Must match RT_FOG_WORLD_GRID_EMISSION_SCALE in
-// raytracing_fog_world_grid_inc.glsl.
+// With WORLD_GRID_FLOAT_EMISSION (devices that add floats atomically in images), emission is summed as 32-bit floats,
+// which keep both faint glows and HDR sources. Otherwise it gets its own fixed point, coarser so bright sources such as
+// flames fit: EMISSION * DENSITY up to about 524000 per meter and channel, in steps of 1/4096 (fainter emission rounds
+// to zero). Each volume's share saturates there instead of wrapping around; the sum of overlapping volumes must stay
+// within it too. Must match RT_FOG_WORLD_GRID_EMISSION_SCALE in raytracing_fog_world_grid_inc.glsl.
 #define EMISSION_SCALE 4096.0
 #else
 #define DENSITY_SCALE 1024.0
@@ -49,7 +54,9 @@ layout(push_constant, std430) uniform Params {
 }
 params;
 
-#ifdef NO_IMAGE_ATOMICS
+#if defined(MODE_WORLD_GRID) && defined(WORLD_GRID_FLOAT_EMISSION)
+layout(r32f, set = 1, binding = 1) uniform volatile image3D emissive_only_map;
+#elif defined(NO_IMAGE_ATOMICS)
 layout(set = 1, binding = 1) volatile buffer emissive_only_map_buffer {
 	uint emissive_only_map[];
 };
@@ -289,12 +296,21 @@ void main() {
 			}
 #endif
 #ifdef EMISSION_USED
+#ifdef WORLD_GRID_FLOAT_EMISSION
+			vec3 emission_f = emission * density;
+			for (int c = 0; c < 3; c++) {
+				if (emission_f[c] != 0.0) {
+					imageAtomicAdd(emissive_only_map, ivec3(pos.xy, pos.z + c * scene_params.fog_volume_size.z), emission_f[c]);
+				}
+			}
+#else
 			ivec3 emission_i = ivec3(clamp(round(emission * density * EMISSION_SCALE), vec3(-2147483520.0), vec3(2147483520.0)));
 			for (int c = 0; c < 3; c++) {
 				if (emission_i[c] != 0) {
 					WORLD_GRID_ADD(emissive_only_map, pos, c, emission_i[c]);
 				}
 			}
+#endif
 #endif
 		}
 #else

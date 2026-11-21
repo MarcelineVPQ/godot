@@ -223,7 +223,13 @@ void Fog::init_fog_shader(uint32_t p_max_directional_lights, int p_roughness_lay
 	MaterialStorage *material_storage = MaterialStorage::get_singleton();
 
 	{
+		RenderingDevice *rd = RD::get_singleton();
+		volumetric_fog.world_grid_float_emission = rd->has_feature(RD::SUPPORTS_IMAGE_ATOMIC_FLOAT_ADD) &&
+				rd->texture_is_format_supported_for_usage(RD::DATA_FORMAT_R32_SFLOAT, RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_STORAGE_ATOMIC_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT);
 		String defines = "#define SAMPLERS_BINDING_FIRST_INDEX " + itos(SAMPLERS_BINDING_FIRST_INDEX) + "\n";
+		if (volumetric_fog.world_grid_float_emission) {
+			defines += "#define WORLD_GRID_FLOAT_EMISSION\n";
+		}
 		// Initialize local fog shader
 		const char *group_defines[VolumetricFogShader::SHADER_GROUP_MAX] = {
 			"",
@@ -256,6 +262,13 @@ void Fog::init_fog_shader(uint32_t p_max_directional_lights, int p_roughness_lay
 		zero.resize_initialized(4);
 		volumetric_fog.world_grid_empty_map = RD::get_singleton()->texture_create(tf, RD::TextureView(), { zero });
 		RD::get_singleton()->set_resource_name(volumetric_fog.world_grid_empty_map, "Fog world grid empty map");
+		if (volumetric_fog.world_grid_float_emission) {
+			tf.format = RD::DATA_FORMAT_R32_SFLOAT;
+			volumetric_fog.world_grid_empty_emission_map = RD::get_singleton()->texture_create(tf, RD::TextureView(), { zero });
+			RD::get_singleton()->set_resource_name(volumetric_fog.world_grid_empty_emission_map, "Fog world grid empty emission map");
+		} else {
+			volumetric_fog.world_grid_empty_emission_map = volumetric_fog.world_grid_empty_map;
+		}
 	}
 
 	{
@@ -390,6 +403,9 @@ void Fog::free_fog_shader() {
 	}
 	if (volumetric_fog.world_grid_ubo.is_valid()) {
 		RD::get_singleton()->free_rid(volumetric_fog.world_grid_ubo);
+	}
+	if (volumetric_fog.world_grid_empty_emission_map.is_valid() && volumetric_fog.world_grid_empty_emission_map != volumetric_fog.world_grid_empty_map) {
+		RD::get_singleton()->free_rid(volumetric_fog.world_grid_empty_emission_map);
 	}
 	if (volumetric_fog.world_grid_empty_map.is_valid()) {
 		RD::get_singleton()->free_rid(volumetric_fog.world_grid_empty_map);
@@ -1305,7 +1321,7 @@ void Fog::volumetric_fog_update(const VolumetricFogSettings &p_settings, const P
 ////////////////////////////////////////////////////////////////////////////////
 // Volumetric Fog World Grid
 
-void Fog::VolumetricFogWorldGrid::init(const Vector3i &p_size) {
+void Fog::VolumetricFogWorldGrid::init(const Vector3i &p_size, bool p_float_emission) {
 	size = p_size;
 
 	RD::TextureFormat tf;
@@ -1322,8 +1338,12 @@ void Fog::VolumetricFogWorldGrid::init(const Vector3i &p_size) {
 	tf.depth = p_size.z * 3;
 	light_map = RD::get_singleton()->texture_create(tf, RD::TextureView());
 	RD::get_singleton()->set_resource_name(light_map, "Fog world grid light map");
+	if (p_float_emission) {
+		tf.format = RD::DATA_FORMAT_R32_SFLOAT;
+	}
 	emissive_map = RD::get_singleton()->texture_create(tf, RD::TextureView());
 	RD::get_singleton()->set_resource_name(emissive_map, "Fog world grid emissive map");
+	tf.format = RD::DATA_FORMAT_R32_UINT;
 
 	tf.width = Math::division_round_up(p_size.x, WORLD_GRID_BRICK_SIZE);
 	tf.height = Math::division_round_up(p_size.y, WORLD_GRID_BRICK_SIZE);
@@ -1375,7 +1395,7 @@ void Fog::volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffer
 	}
 	if (grid.is_null() || grid->size != size) {
 		grid.instantiate();
-		grid->init(size);
+		grid->init(size, volumetric_fog.world_grid_float_emission);
 		p_render_buffers->set_custom_data(RB_SCOPE_FOG_WORLD_GRID, grid);
 	}
 
