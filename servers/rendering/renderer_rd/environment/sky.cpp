@@ -1160,7 +1160,7 @@ void SkyRD::setup_sky(const RenderDataRD *p_render_data, const Size2i p_screen_s
 	// Setup fog variables.
 	sky_scene_state.ubo.volumetric_fog_enabled = false;
 	sky_scene_state.fog_uniform_set = RID();
-	Ref<RendererRD::Fog::VolumetricFog> fog = RendererRD::Fog::get_active(p_render_data->render_buffers.ptr(), p_render_data->environment);
+	Ref<RendererRD::Fog::VolumetricFog> fog = p_render_data->sky_skips_volumetric_fog ? Ref<RendererRD::Fog::VolumetricFog>() : RendererRD::Fog::get_active(p_render_data->render_buffers.ptr(), p_render_data->environment);
 	if (fog.is_valid()) {
 		sky_scene_state.ubo.volumetric_fog_enabled = true;
 

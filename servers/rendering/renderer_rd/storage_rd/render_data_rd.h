@@ -73,6 +73,7 @@ public:
 	uint32_t directional_light_count = 0;
 	bool directional_light_soft_shadows = false;
 	bool shadows_from_ray_queries = false;
+	bool sky_skips_volumetric_fog = false; ///< The path tracer fogs the sky through its own medium.
 	RSE::ShadowRenderer shadow_renderer = RSE::SHADOW_RENDERER_RASTERIZER; ///< Whose Light3D shadow toggle the light buffers follow.
 
 	bool lightmap_bicubic_filter = false;

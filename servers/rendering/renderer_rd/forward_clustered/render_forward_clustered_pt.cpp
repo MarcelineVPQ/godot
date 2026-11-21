@@ -316,6 +316,9 @@ void RenderForwardClusteredPT::_render_scene(RenderDataRD *p_render_data, const 
 	// Recompile pipelines if any of the requirements changed this frame.
 	_update_dirty_geometry_pipelines();
 
+	// With light transport, camera rays that miss trace the medium themselves, so the sky must not take the froxels too.
+	p_render_data->sky_skips_volumetric_fog = GLOBAL_GET_CACHED(bool, "rendering/pathtracing/volumetric_fog_world_grid_transport");
+
 	RID radiance_texture;
 	bool draw_sky = false;
 	bool draw_sky_fog_only = false;
@@ -441,7 +444,7 @@ void RenderForwardClusteredPT::_render_scene(RenderDataRD *p_render_data, const 
 			RD::get_singleton()->untracked_barrier();
 		}
 		RENDER_TIMESTAMP("Update Volumetric Fog");
-		_update_pt_volumetric_fog(p_render_data, rt_state, pt_directional_light_count, pt_positional_light_count);
+		_update_pt_volumetric_fog(p_render_data, rt_state, pt_directional_light_count, pt_positional_light_count, !render_list[RENDER_LIST_ALPHA].elements.is_empty());
 	}
 
 	// Built after the fog update, which the trace samples.
@@ -868,7 +871,7 @@ bool RenderForwardClusteredPT::_record_rt_capture(RD::DrawListID p_draw_list, ui
 	return true;
 }
 
-void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_data, RTViewportState *p_rt_state, uint32_t p_directional_light_count, uint32_t p_positional_light_count) {
+void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_data, RTViewportState *p_rt_state, uint32_t p_directional_light_count, uint32_t p_positional_light_count, bool p_raster_transparents) {
 	// Like raster, keep the froxels when fog is off: a shared viewport without fog renders
 	// into the same buffers, and freeing them would reset the temporal history every frame.
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
@@ -887,9 +890,10 @@ void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_
 	} else {
 		RendererRD::Fog::volumetric_fog_world_grid_free_unused(rb.ptr());
 	}
-	if (world_grid_transport_setting) {
+	if (world_grid_transport_setting && !p_raster_transparents) {
 		// With light transport, the FogVolumes and the Environment's global fog are one medium that every path segment
-		// is traced through, so the path tracer doesn't use the froxels. They are kept for the reason above.
+		// is traced through, so the path tracer doesn't use the froxels. They are kept for the reason above, and still
+		// updated for transparents drawn by the rasterizer, which apply them as in raster rendering.
 		return;
 	}
 

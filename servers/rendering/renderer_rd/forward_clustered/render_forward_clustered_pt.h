@@ -59,7 +59,7 @@ class RenderForwardClusteredPT : public RenderForwardClustered {
 	bool _preload_rt_capture_pipeline(const GeometryInstanceSurfaceDataCache *p_surface_cache, RTVertexCapture::Mode p_mode);
 	void _update_rt_capture_preloads();
 	void _age_out_motion_vectors(const RenderDataRD *p_render_data);
-	void _update_pt_volumetric_fog(RenderDataRD *p_render_data, RTViewportState *p_rt_state, uint32_t p_directional_light_count, uint32_t p_positional_light_count);
+	void _update_pt_volumetric_fog(RenderDataRD *p_render_data, RTViewportState *p_rt_state, uint32_t p_directional_light_count, uint32_t p_positional_light_count, bool p_raster_transparents);
 
 protected:
 	virtual void _render_scene(RenderDataRD *p_render_data, const Color &p_default_bg_color) override;
