@@ -3572,7 +3572,13 @@ void RenderRaytracing::_prepare_tlas(RID &r_tlas, uint32_t &r_max_instances, con
 		inst.id = p_instances.custom_indices[i];
 		if (p_geometries) {
 			// Shaders find the geometry entry of a cluster hit from this bit alone, see rt_geometry_idx().
-			ERR_CONTINUE_MSG(inst.id >= RT_INSTANCE_CLUSTERS_BIT, "Too many path traced geometry entries for a TLAS custom index.");
+			if (unlikely(inst.id >= RT_INSTANCE_CLUSTERS_BIT)) {
+				// An instance without a BLAS and with mask 0, so the slot can't keep last frame's.
+				inst = RD::AccelerationStructureInstance();
+				inst.mask = 0;
+				ERR_PRINT("Too many path traced geometry entries for a TLAS custom index.");
+				continue;
+			}
 			if ((*p_geometries)[inst.id].flags & RT_GEOM_FLAG_CLUSTERS) {
 				inst.id |= RT_INSTANCE_CLUSTERS_BIT;
 			}
