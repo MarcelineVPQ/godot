@@ -740,6 +740,7 @@ Update instructions:
 Files extracted from upstream repository:
 
 - All files in `src/`
+- `demo/clusterlod.h`
 - `LICENSE.md`
 
 
