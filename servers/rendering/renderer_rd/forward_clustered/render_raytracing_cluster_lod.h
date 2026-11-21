@@ -81,7 +81,8 @@ struct RTClusterLodSurface {
 // place, in the same frame, before anything traces it.
 //
 // The cut depends on the camera position only, never the view direction, so reflections, shadows and indirect rays see
-// what the camera would see from there. Its projected errors are within the threshold, in pixels at output resolution.
+// what the camera would see from there. Its projected errors are within the threshold, in pixels at output resolution,
+// for what the camera sees directly; secondary rays can magnify them (a distant caster's shadow on a near receiver).
 // A cut is picked again only when the camera, the instance or the projection moved enough that its errors could have
 // grown or shrunk by HYSTERESIS: cuts are picked that much finer than the threshold, so they still hold until then,
 // and a camera at rest never switches cuts back and forth. At most the per-frame budget of instances is picked again,
