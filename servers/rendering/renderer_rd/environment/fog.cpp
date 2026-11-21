@@ -35,6 +35,7 @@
 #include "servers/rendering/renderer_rd/renderer_scene_render_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/material_storage.h"
 #include "servers/rendering/renderer_rd/storage_rd/texture_storage.h"
+#include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 #include "servers/rendering/rendering_server_default.h"
 
 using namespace RendererRD;
@@ -392,6 +393,10 @@ void Fog::free_fog_shader() {
 	}
 	if (volumetric_fog.world_grid_empty_map.is_valid()) {
 		RD::get_singleton()->free_rid(volumetric_fog.world_grid_empty_map);
+	}
+	volumetric_fog.world_grid_majorant_pipeline.free();
+	if (volumetric_fog.world_grid_majorant_shader_version.is_valid()) {
+		volumetric_fog.world_grid_majorant_shader.version_free(volumetric_fog.world_grid_majorant_shader_version);
 	}
 	if (volumetric_fog.params_ubo.is_valid()) {
 		RD::get_singleton()->free_rid(volumetric_fog.params_ubo);
@@ -1317,6 +1322,13 @@ void Fog::VolumetricFogWorldGrid::init(const Vector3i &p_size) {
 	RD::get_singleton()->set_resource_name(light_map, "Fog world grid light map");
 	emissive_map = RD::get_singleton()->texture_create(tf, RD::TextureView());
 	RD::get_singleton()->set_resource_name(emissive_map, "Fog world grid emissive map");
+
+	tf.width = Math::division_round_up(p_size.x, WORLD_GRID_BRICK_SIZE);
+	tf.height = Math::division_round_up(p_size.y, WORLD_GRID_BRICK_SIZE);
+	tf.depth = Math::division_round_up(p_size.z, WORLD_GRID_BRICK_SIZE);
+	tf.usage_bits = RD::TEXTURE_USAGE_STORAGE_BIT | RD::TEXTURE_USAGE_SAMPLING_BIT;
+	majorant_map = RD::get_singleton()->texture_create(tf, RD::TextureView());
+	RD::get_singleton()->set_resource_name(majorant_map, "Fog world grid majorant map");
 }
 
 Fog::VolumetricFogWorldGrid::~VolumetricFogWorldGrid() {
@@ -1326,6 +1338,7 @@ Fog::VolumetricFogWorldGrid::~VolumetricFogWorldGrid() {
 	RD::get_singleton()->free_rid(density_map);
 	RD::get_singleton()->free_rid(light_map);
 	RD::get_singleton()->free_rid(emissive_map);
+	RD::get_singleton()->free_rid(majorant_map);
 }
 
 void Fog::volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffers, const Transform3D &p_cam_transform, double p_time, const PagedArray<RID> &p_fog_volumes) {
@@ -1359,6 +1372,8 @@ void Fog::volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffer
 	rd->texture_clear(grid->density_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
 	rd->texture_clear(grid->light_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
 	rd->texture_clear(grid->emissive_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
+	grid->occupied_min = Vector3i();
+	grid->occupied_max = Vector3i();
 
 	if (p_fog_volumes.size() == 0) {
 		return;
@@ -1445,6 +1460,13 @@ void Fog::volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffer
 		if (kernel_size.x <= 0 || kernel_size.y <= 0 || kernel_size.z <= 0) {
 			continue;
 		}
+		if (grid->occupied_max.x > grid->occupied_min.x) {
+			grid->occupied_min = grid->occupied_min.min(voxel_min);
+			grid->occupied_max = grid->occupied_max.max(voxel_max);
+		} else {
+			grid->occupied_min = voxel_min;
+			grid->occupied_max = voxel_max;
+		}
 
 		VolumetricFogShader::FogPushConstant push_constant;
 		Vector3 fog_position = fog_volume_instance->transform.get_origin();
@@ -1473,6 +1495,27 @@ void Fog::volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffer
 	}
 
 	rd->compute_list_end();
+
+	if (grid->occupied_max.x > grid->occupied_min.x) {
+		if (volumetric_fog.world_grid_majorant_shader_version.is_null()) {
+			Vector<String> majorant_modes;
+			majorant_modes.push_back("");
+			volumetric_fog.world_grid_majorant_shader.initialize(majorant_modes);
+			volumetric_fog.world_grid_majorant_shader_version = volumetric_fog.world_grid_majorant_shader.version_create();
+			volumetric_fog.world_grid_majorant_pipeline.create_compute_pipeline(volumetric_fog.world_grid_majorant_shader.version_get_shader(volumetric_fog.world_grid_majorant_shader_version, 0));
+		}
+		RID majorant_shader = volumetric_fog.world_grid_majorant_shader.version_get_shader(volumetric_fog.world_grid_majorant_shader_version, 0);
+		RD::Uniform u_density(RD::UNIFORM_TYPE_IMAGE, 0, grid->density_map);
+		RD::Uniform u_majorant(RD::UNIFORM_TYPE_IMAGE, 1, grid->majorant_map);
+
+		compute_list = rd->compute_list_begin();
+		rd->compute_list_bind_compute_pipeline(compute_list, volumetric_fog.world_grid_majorant_pipeline.get_rid());
+		rd->compute_list_bind_uniform_set(compute_list, UniformSetCacheRD::get_singleton()->get_cache(majorant_shader, 0, u_density, u_majorant), 0);
+		const int brick = VolumetricFogWorldGrid::WORLD_GRID_BRICK_SIZE;
+		rd->compute_list_dispatch_threads(compute_list, Math::division_round_up(size.x, brick), Math::division_round_up(size.y, brick), Math::division_round_up(size.z, brick));
+		rd->compute_list_end();
+	}
+
 	rd->draw_command_end_label();
 
 	if (any_uses_time) {

@@ -36,6 +36,7 @@
 #include "servers/rendering/renderer_rd/pipeline_deferred_rd.h"
 #include "servers/rendering/renderer_rd/shaders/environment/volumetric_fog.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/environment/volumetric_fog_process.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/environment/volumetric_fog_world_grid_majorant.glsl.gen.h"
 #include "servers/rendering/renderer_rd/storage_rd/render_buffer_custom_data_rd.h"
 #include "servers/rendering/storage/utilities.h"
 
@@ -149,6 +150,11 @@ private:
 		RID default_shader_rd;
 		RID default_world_grid_shader_rd; // Set when the world grid group is first enabled.
 		RID world_grid_empty_map; // 1x1x1 zero R32_UINT, bound when there is no world grid.
+
+		// Brick majorants of the world grid, compiled on first use.
+		VolumetricFogWorldGridMajorantShaderRD world_grid_majorant_shader;
+		RID world_grid_majorant_shader_version;
+		PipelineDeferredRD world_grid_majorant_pipeline;
 
 		RID base_uniform_set;
 
@@ -372,6 +378,8 @@ public:
 		GDCLASS(VolumetricFogWorldGrid, RenderBufferCustomDataRD)
 
 	public:
+		static constexpr int WORLD_GRID_BRICK_SIZE = 8; // Must match BRICK_SIZE in volumetric_fog_world_grid_majorant.glsl.
+
 		Vector3i size;
 		float voxel_size = 0.0;
 		Vector3 origin;
@@ -379,6 +387,11 @@ public:
 		RID density_map;
 		RID light_map;
 		RID emissive_map;
+		RID majorant_map; // Highest density of each brick of WORLD_GRID_BRICK_SIZE^3 voxels.
+
+		// Voxel box holding this frame's FogVolumes, empty when there are none.
+		Vector3i occupied_min;
+		Vector3i occupied_max;
 
 		RID uniform_set;
 
