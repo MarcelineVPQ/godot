@@ -10,6 +10,12 @@ This fork of Godot 4.8-dev builds on NVIDIA's real-time path tracing branch
 | Volumetric path tracing | Light scatters in fog for real: delta tracking against brick majorants, light sampling with shadow transmittance, multiple scattering, emission; fog shows in reflections and bounces, smoke casts shadows; guides for DLSS RR | pt-volumetrics |
 | Cluster geometry (virtualised geometry, phase 1) | Meshes baked into cluster LOD hierarchies on import (meshoptimizer clusterlod) and traced through VK_NV_cluster_acceleration_structure (RTX Mega Geometry); Triangles, Clusters, Groups, LOD and Error debug views | virtual-geometry |
 
+**Ray-traced audio (companion).** Paired with our fork of
+[Nexus Resonance](https://github.com/MarcelineVPQ/godot-nexus-resonance), a Steam Audio
+GDExtension by its authors, sound is ray traced through the same scene: occlusion and
+transmission through walls and doors, real reverb from room geometry, sound that follows
+the listener, with in-engine debug overlays. It loads as a plugin; nothing to merge.
+
 Everything is off or falls back cleanly when the hardware or driver lacks it,
 and raster rendering is unchanged. The branches stack in order; the newest
 (virtual-geometry) has everything.
