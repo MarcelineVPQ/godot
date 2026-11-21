@@ -912,7 +912,7 @@ Patches:
 
 Not vendored: no file of the SDK is committed. Building with `use_ngx=yes`
 downloads these files from the pinned commit into `thirdparty/ngx/` (ignored by
-git) and links them; see
+git), checks each against its SHA-256 in `SConstruct`, and links them; see
 `drivers/ngx/README.md`. Binaries built that way are not MIT only; see the
 `thirdparty/ngx/*` entry in `COPYRIGHT.txt`.
 

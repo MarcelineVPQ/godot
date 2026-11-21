@@ -6,11 +6,12 @@ the NVIDIA NGX SDK directly, through Vulkan. Windows builds are unchanged.
 
 ## How it works
 
-- `scons platform=linuxbsd` (x86_64, Vulkan) has `use_ngx=yes` by default. SConstruct downloads
-  the files it needs from NVIDIA's DLSS SDK at a pinned commit (tag `v310.9.16`, commit
-  `9981c6350dc58c0ce21f024fd65e31e851c31689` of https://github.com/NVIDIA/DLSS) into
-  `thirdparty/ngx/`, which git ignores. If the download fails, the engine builds without NGX,
-  as it does for Aftermath. `use_ngx=no` turns it off.
+- NGX is opt-in: `scons platform=linuxbsd use_ngx=yes` (x86_64, Vulkan). SConstruct then
+  downloads the files it needs from NVIDIA's DLSS SDK at a pinned commit (tag `v310.9.16`,
+  commit `9981c6350dc58c0ce21f024fd65e31e851c31689` of https://github.com/NVIDIA/DLSS) into
+  `thirdparty/ngx/`, which git ignores, and checks each file's SHA-256. If the download fails,
+  the build stops and says so. `scons -c` and `--help` never download. For offline builds, put
+  the files in `thirdparty/ngx/` yourself and add `fetch_ngx=no`.
 - The build links `libnvsdk_ngx.a` and copies `libnvidia-ngx-dlssd.so.310.9.16` (the Ray
   Reconstruction library) into `bin/`. At runtime NGX loads it from the folder of the Godot
   executable, so ship it next to the executable.

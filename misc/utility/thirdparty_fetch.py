@@ -18,6 +18,7 @@ False if the download failed.
 Re-extraction is triggered automatically when the URL changes.
 """
 
+import hashlib
 import io
 import os
 import shutil
@@ -108,8 +109,9 @@ def fetch_files(
 
     name     - Human-readable SDK name used in log messages.
     base_url - URL prefix, e.g. a raw file URL pinned to one commit.
-    files    - Paths relative to base_url; each is saved at the same relative
-               path inside dest_dir.
+    files    - Dict of paths relative to base_url to the SHA-256 (hex) each
+               download must have; each is saved at the same relative path
+               inside dest_dir.
     dest_dir - Local directory to save into.
     """
     stamp = os.path.join(dest_dir, _URL_STAMP)
@@ -119,22 +121,28 @@ def fetch_files(
         with open(stamp, "r") as f:
             cached_url = f.read().strip()
 
-    if cached_url == base_url and all(os.path.isfile(os.path.join(dest_dir, rel)) for rel in files):
+    missing = [rel for rel in files if not os.path.isfile(os.path.join(dest_dir, rel))]
+    if cached_url == base_url and not missing:
         return True
 
     if cached_url is not None and cached_url != base_url:
         print(f"{name}: URL changed - clearing '{dest_dir}' and re-fetching.")
+    elif cached_url is not None:
+        print(f"{name}: '{missing[0]}' is missing - clearing '{dest_dir}' and re-fetching.")
     else:
         print(f"{name}: not found. Downloading {len(files)} file(s) from:\n  {base_url}")
     if os.path.isdir(dest_dir):
         shutil.rmtree(dest_dir)
 
     try:
-        # Download everything first, so a failed fetch never leaves a partial SDK behind.
+        # Download and check everything first, so a failed fetch never leaves a partial SDK behind.
         contents = {}
-        for rel in files:
+        for rel, sha256 in files.items():
             with urllib.request.urlopen(base_url + "/" + rel) as resp:
-                contents[rel] = resp.read()
+                data = resp.read()
+            if hashlib.sha256(data).hexdigest() != sha256:
+                raise ValueError(f"'{rel}' does not have the expected SHA-256.")
+            contents[rel] = data
 
         for rel, data in contents.items():
             dest = os.path.join(dest_dir, rel)
