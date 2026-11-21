@@ -700,7 +700,25 @@
 		<constant name="RENDER_INFO_RT_CAPTURE_ARENA_SIZE_KB" value="20" enum="RenderInfo">
 			Size, in kilobytes, of the vertex capture arena (ray tracing only).
 		</constant>
-		<constant name="RENDER_INFO_MAX" value="21" enum="RenderInfo">
+		<constant name="RENDER_INFO_RT_CLUSTER_LOD_INSTANCES" value="21" enum="RenderInfo">
+			Number of instances traced with cluster level of detail (see [member ProjectSettings.rendering/pathtracing/cluster_geometry/lod]).
+		</constant>
+		<constant name="RENDER_INFO_RT_CLUSTER_LOD_CLUSTERS" value="22" enum="RenderInfo">
+			Number of clusters in the current level of detail of the instances counted by [constant RENDER_INFO_RT_CLUSTER_LOD_INSTANCES]. Read back from the GPU, so it lags a few frames behind.
+		</constant>
+		<constant name="RENDER_INFO_RT_CLUSTER_LOD_TRIANGLES_K" value="23" enum="RenderInfo">
+			Thousands of triangles in the current level of detail of the instances counted by [constant RENDER_INFO_RT_CLUSTER_LOD_INSTANCES]: the triangles they are traced with. Read back from the GPU, so it lags a few frames behind.
+		</constant>
+		<constant name="RENDER_INFO_RT_CLUSTER_LOD_FINEST_TRIANGLES_K" value="24" enum="RenderInfo">
+			Thousands of triangles the instances counted by [constant RENDER_INFO_RT_CLUSTER_LOD_INSTANCES] have at their finest level, the source mesh. Compare with [constant RENDER_INFO_RT_CLUSTER_LOD_TRIANGLES_K] for what level of detail saves.
+		</constant>
+		<constant name="RENDER_INFO_RT_CLUSTER_LOD_REBUILDS" value="25" enum="RenderInfo">
+			Number of instances whose level of detail was picked again this frame, each rebuilding its acceleration structure.
+		</constant>
+		<constant name="RENDER_INFO_RT_CLUSTER_LOD_DEFERRED" value="26" enum="RenderInfo">
+			Number of instances whose level of detail was due to be picked again this frame but waited, over [member ProjectSettings.rendering/pathtracing/cluster_geometry/lod_max_rebuilds_per_frame]. Until then, their error can exceed [member ProjectSettings.rendering/pathtracing/cluster_geometry/lod_error_threshold].
+		</constant>
+		<constant name="RENDER_INFO_MAX" value="27" enum="RenderInfo">
 			Represents the size of the [enum RenderInfo] enum.
 		</constant>
 		<constant name="RENDER_INFO_TYPE_VISIBLE" value="0" enum="RenderInfoType">

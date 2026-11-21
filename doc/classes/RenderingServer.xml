@@ -5692,7 +5692,25 @@
 		<constant name="VIEWPORT_RENDER_INFO_RT_CAPTURE_ARENA_SIZE_KB" value="20" enum="ViewportRenderInfo">
 			Size, in kilobytes, of the vertex capture arena (ray tracing only).
 		</constant>
-		<constant name="VIEWPORT_RENDER_INFO_MAX" value="21" enum="ViewportRenderInfo">
+		<constant name="VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_INSTANCES" value="21" enum="ViewportRenderInfo">
+			Number of instances traced with cluster level of detail (see [member ProjectSettings.rendering/pathtracing/cluster_geometry/lod]).
+		</constant>
+		<constant name="VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_CLUSTERS" value="22" enum="ViewportRenderInfo">
+			Number of clusters in the current level of detail of the instances counted by [constant VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_INSTANCES]. Read back from the GPU, so it lags a few frames behind.
+		</constant>
+		<constant name="VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_TRIANGLES_K" value="23" enum="ViewportRenderInfo">
+			Thousands of triangles in the current level of detail of the instances counted by [constant VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_INSTANCES]: the triangles they are traced with. Read back from the GPU, so it lags a few frames behind.
+		</constant>
+		<constant name="VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_FINEST_TRIANGLES_K" value="24" enum="ViewportRenderInfo">
+			Thousands of triangles the instances counted by [constant VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_INSTANCES] have at their finest level, the source mesh. Compare with [constant VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_TRIANGLES_K] for what level of detail saves.
+		</constant>
+		<constant name="VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_REBUILDS" value="25" enum="ViewportRenderInfo">
+			Number of instances whose level of detail was picked again this frame, each rebuilding its acceleration structure.
+		</constant>
+		<constant name="VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_DEFERRED" value="26" enum="ViewportRenderInfo">
+			Number of instances whose level of detail was due to be picked again this frame but waited, over [member ProjectSettings.rendering/pathtracing/cluster_geometry/lod_max_rebuilds_per_frame]. Until then, their error can exceed [member ProjectSettings.rendering/pathtracing/cluster_geometry/lod_error_threshold].
+		</constant>
+		<constant name="VIEWPORT_RENDER_INFO_MAX" value="27" enum="ViewportRenderInfo">
 			Represents the size of the [enum ViewportRenderInfo] enum.
 		</constant>
 		<constant name="VIEWPORT_RENDER_INFO_TYPE_VISIBLE" value="0" enum="ViewportRenderInfoType">

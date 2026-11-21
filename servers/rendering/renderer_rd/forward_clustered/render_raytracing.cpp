@@ -5367,7 +5367,7 @@ RTViewportState *RenderRaytracing::build_tlas(const RenderDataRD *p_render_data,
 	builder.gather_instances(_open_plan_arena(state, p_render_data, ctx));
 	builder.add_multimesh_surfaces();
 	// Picks the cuts the BLASes of this view's instances are built over, before the builds.
-	cluster_lod.end_view(state->cluster_lod, builder.dirty_blas_list);
+	cluster_lod.end_view(state->cluster_lod, builder.dirty_blas_list, p_render_data->render_info ? p_render_data->render_info->info[RSE::VIEWPORT_RENDER_INFO_TYPE_VISIBLE] : nullptr);
 	builder.finish();
 
 	SceneShaderRaytracing::get_singleton()->finalize_custom_shaders();

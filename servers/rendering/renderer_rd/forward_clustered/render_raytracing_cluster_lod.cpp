@@ -31,10 +31,14 @@
 #include "render_raytracing_cluster_lod.h"
 
 #include "core/config/project_settings.h"
+#include "core/object/callable_mp.h"
 #include "core/templates/sort_array.h"
 #include "servers/rendering/renderer_rd/storage_rd/render_data_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/render_scene_buffers_rd.h"
 #include "servers/rendering/rendering_device.h"
+#include "servers/rendering/rendering_server_enums.h"
+#include "servers/rendering/rendering_server_globals.h"
+#include "servers/rendering/storage/utilities.h"
 
 #include <cfloat>
 
@@ -216,7 +220,7 @@ void RTClusterLodSelector::_ensure_stats_capacity(View &r_view) {
 	r_view.stats_capacity = capacity;
 }
 
-void RTClusterLodSelector::end_view(View &r_view, LocalVector<RID> &r_dirty_blas_list) {
+void RTClusterLodSelector::end_view(View &r_view, LocalVector<RID> &r_dirty_blas_list, int *r_render_info) {
 	r_view.picked = 0;
 	r_view.deferred = 0;
 	if (!r_view.active) {
@@ -290,6 +294,7 @@ void RTClusterLodSelector::end_view(View &r_view, LocalVector<RID> &r_dirty_blas
 			uniforms.push_back(u);
 		}
 		const RID uniform_set = rd->uniform_set_create(uniforms, shader.version_get_shader(shader_version, 0), 0, true);
+		RENDER_TIMESTAMP("Cluster LOD Select");
 		RD::ComputeListID compute_list = rd->compute_list_begin();
 		rd->compute_list_bind_compute_pipeline(compute_list, pipeline);
 		rd->compute_list_bind_uniform_set(compute_list, uniform_set, 0);
@@ -299,6 +304,9 @@ void RTClusterLodSelector::end_view(View &r_view, LocalVector<RID> &r_dirty_blas
 		r_view.picked = count;
 	}
 	r_view.candidates.clear();
+	if (r_render_info) {
+		_record_render_info(r_view, r_render_info);
+	}
 
 	LocalVector<Key> evicted;
 	for (KeyValue<Key, View::Instance> &kv : r_view.instances) {
@@ -310,6 +318,49 @@ void RTClusterLodSelector::end_view(View &r_view, LocalVector<RID> &r_dirty_blas
 		_free_instance(r_view, r_view.instances[key]);
 		r_view.instances.erase(key);
 	}
+}
+
+void RTClusterLodSelector::_receive_stats(const PackedByteArray &p_data, Array p_readback) {
+	p_readback[0] = p_data;
+}
+
+void RTClusterLodSelector::_record_render_info(View &r_view, int *r_render_info) {
+	if (r_view.stats_buffer.is_valid()) {
+		if (r_view.stats_readback.is_empty()) {
+			r_view.stats_readback.push_back(PackedByteArray());
+		}
+		RD::get_singleton()->buffer_get_data_async(r_view.stats_buffer, callable_mp_static(&RTClusterLodSelector::_receive_stats).bind(r_view.stats_readback), 0, r_view.stats_capacity * sizeof(uint32_t) * 2);
+	}
+
+	// Counts of the last readback; an instance picked since shows its previous cut until the next one lands.
+	const PackedByteArray counts = r_view.stats_readback.is_empty() ? PackedByteArray() : PackedByteArray(r_view.stats_readback[0]);
+	const uint32_t *slots = reinterpret_cast<const uint32_t *>(counts.ptr());
+	const uint32_t slot_count = counts.size() / (sizeof(uint32_t) * 2);
+	uint64_t instances = 0;
+	uint64_t clusters = 0;
+	uint64_t triangles = 0;
+	uint64_t finest_triangles = 0;
+	for (const KeyValue<Key, View::Instance> &kv : r_view.instances) {
+		const View::Instance &instance = kv.value;
+		if (instance.last_used_frame != r_view.frame) {
+			continue;
+		}
+		instances++;
+		finest_triangles += instance.finest_triangle_count;
+		if (instance.stats_slot < slot_count) {
+			clusters += slots[instance.stats_slot * 2];
+			triangles += slots[instance.stats_slot * 2 + 1];
+		}
+	}
+	const auto add = [r_render_info](RSE::ViewportRenderInfo p_info, uint64_t p_value) {
+		r_render_info[p_info] = int(MIN(uint64_t(r_render_info[p_info]) + p_value, uint64_t(INT32_MAX)));
+	};
+	add(RSE::VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_INSTANCES, instances);
+	add(RSE::VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_CLUSTERS, clusters);
+	add(RSE::VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_TRIANGLES_K, (triangles + 500) / 1000);
+	add(RSE::VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_FINEST_TRIANGLES_K, (finest_triangles + 500) / 1000);
+	add(RSE::VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_REBUILDS, r_view.picked);
+	add(RSE::VIEWPORT_RENDER_INFO_RT_CLUSTER_LOD_DEFERRED, r_view.deferred);
 }
 
 void RTClusterLodSelector::_free_instance(View &r_view, View::Instance &r_instance) {

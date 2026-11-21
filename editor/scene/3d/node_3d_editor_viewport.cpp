@@ -3742,6 +3742,11 @@ void Node3DEditorViewport::_notification(int p_what) {
 					};
 					text += "\n" + vformat(TTR("RT AS Scratch: %04d / %04d MB (%03d rollovers)"), rt_mb(Viewport::RENDER_INFO_RT_SCRATCH_USED_KB), rt_mb(Viewport::RENDER_INFO_RT_SCRATCH_SIZE_KB), rt_info(Viewport::RENDER_INFO_RT_SCRATCH_ROLLOVERS));
 					text += "\n" + vformat(TTR("RT Capture Arena: %04d / %04d MB"), rt_mb(Viewport::RENDER_INFO_RT_CAPTURE_ARENA_USED_KB), rt_mb(Viewport::RENDER_INFO_RT_CAPTURE_ARENA_SIZE_KB));
+					const int rt_cluster_instances = rt_info(Viewport::RENDER_INFO_RT_CLUSTER_LOD_INSTANCES);
+					if (rt_cluster_instances > 0) {
+						text += "\n" + vformat(TTR("RT Cluster LOD: %d instances, %d clusters, %dk / %dk tris"), rt_cluster_instances, rt_info(Viewport::RENDER_INFO_RT_CLUSTER_LOD_CLUSTERS), rt_info(Viewport::RENDER_INFO_RT_CLUSTER_LOD_TRIANGLES_K), rt_info(Viewport::RENDER_INFO_RT_CLUSTER_LOD_FINEST_TRIANGLES_K));
+						text += "\n" + vformat(TTR("RT Cluster LOD Rebuilds: %d (%d deferred)"), rt_info(Viewport::RENDER_INFO_RT_CLUSTER_LOD_REBUILDS), rt_info(Viewport::RENDER_INFO_RT_CLUSTER_LOD_DEFERRED));
+					}
 				}
 
 				info_label->set_text(text);

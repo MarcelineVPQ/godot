@@ -34,6 +34,7 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/rid.h"
+#include "core/variant/array.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/cluster_lod_select.glsl.gen.h"
 
 class RenderDataRD;
@@ -147,6 +148,8 @@ public:
 
 		uint32_t picked = 0; // Instances given a new cut this frame.
 		uint32_t deferred = 0; // Instances over the budget this frame, which keep their cut.
+		// The stats buffer as last read back: one PackedByteArray, shared with the readbacks still in flight.
+		Array stats_readback;
 	};
 
 	// Pixels at output resolution per unit of world error, at unit distance for a perspective camera.
@@ -164,8 +167,9 @@ public:
 	// The BLAS to trace the surface with for instance p_key at p_transform; invalid when it can't be made.
 	RID instance_blas(View &r_view, const Key &p_key, const RTClusterLodSurface &p_surface, const Transform3D &p_transform);
 	// Picks this frame's cuts on the GPU and queues the BLASes over them in r_dirty_blas_list. Call after every
-	// instance_blas() of the view and before the BLASes are built.
-	void end_view(View &r_view, LocalVector<RID> &r_dirty_blas_list);
+	// instance_blas() of the view and before the BLASes are built. Adds the view's counters to r_render_info, the
+	// visible render info, when given.
+	void end_view(View &r_view, LocalVector<RID> &r_dirty_blas_list, int *r_render_info);
 	void free_view(View &r_view);
 
 private:
@@ -201,5 +205,7 @@ private:
 	float _staleness(const View &p_view, const View::Instance &p_instance, const RTClusterLodSurface &p_surface, const Transform3D &p_transform) const;
 	void _build_pending_cluster_sets();
 	void _ensure_stats_capacity(View &r_view);
+	void _record_render_info(View &r_view, int *r_render_info);
+	static void _receive_stats(const PackedByteArray &p_data, Array p_readback);
 	void _free_instance(View &r_view, View::Instance &r_instance);
 };
