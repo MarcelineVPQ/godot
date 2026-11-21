@@ -62,3 +62,17 @@ ship a product, and its release checklist is:
    application name, platform, ship date and a link).
 3. Attribute DLSS and show the NVIDIA marks on the splash screen, the about box and the credits
    (supplement section 7.1(b)).
+
+## Known validation messages inside NGX
+
+With the Khronos validation layer and synchronization validation on (driver 615.71.09, DLSS-D
+310.9.16, layer 1.4.341), every frame that evaluates DLSS Ray Reconstruction reports two messages on
+an image NGX creates and names itself, `nv.ngx.dlssd.resource`. The engine never creates, binds or
+transitions that image, so they cannot be fixed here; nothing visible goes wrong.
+
+- `SYNC-HAZARD-WRITE-AFTER-WRITE`: inside Evaluate, NGX clears the image right after its own layout
+  barrier, and the barrier's scope does not include the clear's transfer write.
+- `VUID-vkCmdDraw-None-09600`: an NGX draw expects the image in `VK_IMAGE_LAYOUT_GENERAL` while it
+  is still `VK_IMAGE_LAYOUT_UNDEFINED`.
+
+Everything else around Evaluate (the inputs, the output, the barriers) validates clean.
