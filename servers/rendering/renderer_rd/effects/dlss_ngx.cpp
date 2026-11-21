@@ -278,6 +278,13 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 void RendererRD::DLSSEffect::_upscale_internal_graph_callback(RenderingDeviceDriver *p_driver, RDD::CommandBufferID p_command_buffer, void *p_userdata) {
 	DLSSContextNGX *self = (DLSSContextNGX *)p_userdata;
 	self->last_effect->_upscale_internal(p_command_buffer, self->last_parameters);
+
+	// NGX can also write the output with a transfer command (it clears it on some frames), which the render graph's
+	// barriers for the storage image usage declared in upscale() don't wait for.
+	RDD::MemoryAccessBarrier barrier;
+	barrier.src_access = RDD::BARRIER_ACCESS_COPY_WRITE_BIT | RDD::BARRIER_ACCESS_SHADER_WRITE_BIT;
+	barrier.dst_access = RDD::BARRIER_ACCESS_MEMORY_READ_BIT | RDD::BARRIER_ACCESS_MEMORY_WRITE_BIT;
+	p_driver->command_pipeline_barrier(p_command_buffer, RDD::PIPELINE_STAGE_ALL_COMMANDS_BIT, RDD::PIPELINE_STAGE_ALL_COMMANDS_BIT, barrier, {}, {}, {});
 }
 
 bool DLSSEffect::is_ready(const DLSSContext::Parameters &p_params) {
