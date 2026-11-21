@@ -738,11 +738,13 @@ void main() {
 
 			imageStore(rt_depth_image, pixel, vec4(0.0));
 
-			// Sky velocity: reproject a far-plane point using unjittered VPs.
+			// Sky velocity: the direction reprojected at infinity (w = 0) with the unjittered VPs, so only the camera's
+			// rotation moves the sky, never its translation.
 			{
-				vec3 far_world = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * 10000.0;
-				vec2 curr_uv = project_uv(far_world, curr_vp_unjittered);
-				vec2 prev_uv = project_uv(far_world, prev_vp_unjittered);
+				vec4 curr_clip = curr_vp_unjittered * vec4(gl_WorldRayDirectionEXT, 0.0);
+				vec4 prev_clip = prev_vp_unjittered * vec4(gl_WorldRayDirectionEXT, 0.0);
+				vec2 curr_uv = curr_clip.xy / curr_clip.w * 0.5 + 0.5;
+				vec2 prev_uv = prev_clip.xy / prev_clip.w * 0.5 + 0.5;
 				imageStore(rt_velocity_image, pixel, vec4(prev_uv - curr_uv, 0.0, 0.0));
 #ifdef DLSS_RR_ENABLED
 				dlss_rr_write_specular_motion_vector(prev_uv - curr_uv);
@@ -788,9 +790,12 @@ void main() {
 		uint total_bounces = get_total_bounces(ps.packed_bounces_flags);
 		if (total_bounces == 0u && is_sample_zero(ps.packed_bounces_flags) && !composite_passthrough) {
 			ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
-			imageStore(dlss_rr_diffuse_albedo, pixel, vec4(vec3(DLSSRR_SKY_DIFFUSE_ALBEDO), 1.0));
-			imageStore(dlss_rr_specular_albedo, pixel, vec4(0.0));
-			imageStore(dlss_rr_normal_roughness, pixel, vec4(0.0));
+			// The sky as a perfect mirror facing the camera, reprojected by the sky's specular motion vector (rotation only,
+			// written above). With the Integration Guide's sky defaults (diffuse albedo 0.5, no normal), RR filtered the
+			// sky as a diffuse signal and wiped point-like detail: no stars at night until the camera stood still a while.
+			imageStore(dlss_rr_diffuse_albedo, pixel, vec4(vec3(0.0), 1.0));
+			imageStore(dlss_rr_specular_albedo, pixel, vec4(1.0));
+			imageStore(dlss_rr_normal_roughness, pixel, vec4(-gl_WorldRayDirectionEXT, 0.0));
 		}
 	}
 #endif

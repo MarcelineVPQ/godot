@@ -1174,7 +1174,4 @@ float3 DLSSRR_computeSpecularAlbedo(float3 baseColor, float metalness, float die
 	return material_specular_albedo(F0, roughness, NdotV);
 }
 
-// Sky-pixel guide defaults from the DLSS-RR Integration Guide (section 3.4).
-#define DLSSRR_SKY_DIFFUSE_ALBEDO 0.5f
-
 #endif // BRDF_HLSLI
