@@ -856,18 +856,25 @@ bool RenderForwardClusteredPT::_record_rt_capture(RD::DrawListID p_draw_list, ui
 void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_data, RTViewportState *p_rt_state, uint32_t p_directional_light_count, uint32_t p_positional_light_count) {
 	// Like raster, keep the froxels when fog is off: a shared viewport without fog renders
 	// into the same buffers, and freeing them would reset the temporal history every frame.
+	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
 	if (p_render_data->environment.is_null() || !environment_get_volumetric_fog_enabled(p_render_data->environment)) {
+		// The world grid has no history to keep, unlike the froxels.
+		RendererRD::Fog::volumetric_fog_world_grid_free_unused(rb.ptr());
 		return;
 	}
 
-	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
-
-	// The grid gets every FogVolume in its bounds, on screen or not; the froxels only those in the view.
-	const PagedArray<RID> &world_grid_fog_volumes = p_render_data->rt_fog_volumes ? *p_render_data->rt_fog_volumes : *p_render_data->fog_volumes;
-	RendererRD::Fog::get_singleton()->volumetric_fog_world_grid_update(rb.ptr(), p_render_data->scene_data->cam_transform, time, world_grid_fog_volumes);
+	// Only light transport and the grid's debug view read the world grid.
+	const bool world_grid_transport_setting = GLOBAL_GET_CACHED(bool, "rendering/pathtracing/volumetric_fog_world_grid_transport");
+	if (world_grid_transport_setting || RendererEnvironmentStorage::get_singleton()->environment_get_pathtracing_debug_mode(p_render_data->environment) == SceneShaderRaytracing::RT_DEBUG_VOLUMETRIC_FOG_WORLD_GRID) {
+		// The grid gets every FogVolume in its bounds, on screen or not; the froxels only those in the view.
+		const PagedArray<RID> &world_grid_fog_volumes = p_render_data->rt_fog_volumes ? *p_render_data->rt_fog_volumes : *p_render_data->fog_volumes;
+		RendererRD::Fog::get_singleton()->volumetric_fog_world_grid_update(rb.ptr(), p_render_data->scene_data->cam_transform, time, world_grid_fog_volumes);
+	} else {
+		RendererRD::Fog::volumetric_fog_world_grid_free_unused(rb.ptr());
+	}
 	// With light transport through the world grid, FogVolumes are traced there only. The froxels keep the
 	// Environment's global fog, which the grid doesn't hold, for camera segments.
-	const bool world_grid_transport = GLOBAL_GET_CACHED(bool, "rendering/pathtracing/volumetric_fog_world_grid_transport") && RendererRD::Fog::get_active_world_grid(rb.ptr(), p_render_data->environment).is_valid();
+	const bool world_grid_transport = world_grid_transport_setting && RendererRD::Fog::get_active_world_grid(rb.ptr(), p_render_data->environment).is_valid();
 	const PagedArray<RID> no_fog_volumes;
 
 	// Shadow maps aren't rendered when path tracing, so there is no raster fallback.

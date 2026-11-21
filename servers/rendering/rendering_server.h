@@ -699,6 +699,7 @@ public:
 	// Pathtracing
 	static constexpr int PT_DEBUG_TIMING_HEATMAP = 24;
 	static constexpr int PT_DEBUG_DYNAMIC_GEOMETRY = 29;
+	static constexpr int PT_DEBUG_VOLUMETRIC_FOG_WORLD_GRID = 30;
 
 	virtual void environment_set_pathtracing(RID p_env, bool p_enable, int p_debug_mode, int p_samples_per_pixel, int p_max_bounces, RSE::PathtracingDenoiser p_denoiser, bool p_sky_shader_enabled) = 0;
 

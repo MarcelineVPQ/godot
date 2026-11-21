@@ -1341,6 +1341,17 @@ Fog::VolumetricFogWorldGrid::~VolumetricFogWorldGrid() {
 	RD::get_singleton()->free_rid(majorant_map);
 }
 
+void Fog::volumetric_fog_world_grid_free_unused(RenderSceneBuffersRD *p_render_buffers) {
+	ERR_FAIL_NULL(p_render_buffers);
+	if (!p_render_buffers->has_custom_data(RB_SCOPE_FOG_WORLD_GRID)) {
+		return;
+	}
+	Ref<VolumetricFogWorldGrid> grid = p_render_buffers->get_custom_data(RB_SCOPE_FOG_WORLD_GRID);
+	if (grid.is_null() || grid->last_update_frame + 1 < RD::get_singleton()->get_frames_drawn()) {
+		p_render_buffers->set_custom_data(RB_SCOPE_FOG_WORLD_GRID, Ref<RenderBufferCustomDataRD>());
+	}
+}
+
 void Fog::volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffers, const Transform3D &p_cam_transform, double p_time, const PagedArray<RID> &p_fog_volumes) {
 	ERR_FAIL_NULL(p_render_buffers);
 	RenderingDevice *rd = RD::get_singleton();
@@ -1369,9 +1380,15 @@ void Fog::volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffer
 	grid->voxel_size = voxel_size;
 	grid->origin = ((p_cam_transform.origin - Vector3(size) * voxel_size * 0.5) / voxel_size).floor() * voxel_size;
 
-	rd->texture_clear(grid->density_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
-	rd->texture_clear(grid->light_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
-	rd->texture_clear(grid->emissive_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
+	grid->last_update_frame = rd->get_frames_drawn();
+
+	// Clearing the maps costs time, so it is skipped while nothing was written since the last clear.
+	if (!grid->maps_cleared) {
+		rd->texture_clear(grid->density_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
+		rd->texture_clear(grid->light_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
+		rd->texture_clear(grid->emissive_map, Color(0, 0, 0, 0), 0, 1, 0, 1);
+		grid->maps_cleared = true;
+	}
 	grid->occupied_min = Vector3i();
 	grid->occupied_max = Vector3i();
 
@@ -1467,6 +1484,7 @@ void Fog::volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffer
 			grid->occupied_min = voxel_min;
 			grid->occupied_max = voxel_max;
 		}
+		grid->maps_cleared = false;
 
 		VolumetricFogShader::FogPushConstant push_constant;
 		Vector3 fog_position = fog_volume_instance->transform.get_origin();

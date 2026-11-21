@@ -122,6 +122,7 @@ public:
 	static constexpr int RT_PARAM_VIS_MODE = 0;
 	static constexpr int RT_DEBUG_TIMING_HEATMAP = RS::PT_DEBUG_TIMING_HEATMAP;
 	static constexpr int RT_DEBUG_DYNAMIC_GEOMETRY = RS::PT_DEBUG_DYNAMIC_GEOMETRY;
+	static constexpr int RT_DEBUG_VOLUMETRIC_FOG_WORLD_GRID = RS::PT_DEBUG_VOLUMETRIC_FOG_WORLD_GRID;
 	static constexpr int RT_PARAM_SAMPLE_COUNT = 1;
 	static constexpr int RT_PARAM_MAX_BOUNCES = 2;
 	static constexpr int RT_PARAM_DENOISER = 3;

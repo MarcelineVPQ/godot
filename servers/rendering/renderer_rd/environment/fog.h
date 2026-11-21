@@ -392,6 +392,8 @@ public:
 		// Voxel box holding this frame's FogVolumes, empty when there are none.
 		Vector3i occupied_min;
 		Vector3i occupied_max;
+		bool maps_cleared = false; // Density, scattering and emission hold zeros, so they need no clearing.
+		uint64_t last_update_frame = 0; // RenderingDevice frame of the last update.
 
 		RID uniform_set;
 
@@ -419,6 +421,9 @@ public:
 
 	/// Fills the world grid of p_render_buffers (creating it if needed) around p_cam_transform from the fog volumes.
 	void volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffers, const Transform3D &p_cam_transform, double p_time, const PagedArray<RID> &p_fog_volumes);
+	/// Frees the world grid of p_render_buffers when no frame updated it since the last one. Viewports sharing render
+	/// buffers then keep it as long as one of them uses it.
+	static void volumetric_fog_world_grid_free_unused(RenderSceneBuffersRD *p_render_buffers);
 
 	// Replaces shadow map lookups of the density pass with ray queries, set 1 and 2 are owned by the caller. The caller
 	// also orders the buffers read through device addresses, which the draw graph can't see.
