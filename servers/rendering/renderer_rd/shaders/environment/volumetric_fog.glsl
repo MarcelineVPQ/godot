@@ -14,6 +14,11 @@ layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 // Fixed point of the world grid's maps: finer than the froxels', so thin media keep their albedo. Sums up to 131072
 // per meter fit. Must match RT_FOG_WORLD_GRID_SCALE in raytracing_fog_world_grid_inc.glsl.
 #define DENSITY_SCALE 16384.0
+// Emission gets its own fixed point, coarser so bright HDR sources such as flames fit: EMISSION * DENSITY up to about
+// 524000 per meter and channel, in steps of 1/4096. Each volume's share saturates there instead of wrapping around;
+// the sum of overlapping volumes must stay within it too. Must match RT_FOG_WORLD_GRID_EMISSION_SCALE in
+// raytracing_fog_world_grid_inc.glsl.
+#define EMISSION_SCALE 4096.0
 #else
 #define DENSITY_SCALE 1024.0
 #endif
@@ -284,7 +289,7 @@ void main() {
 			}
 #endif
 #ifdef EMISSION_USED
-			ivec3 emission_i = ivec3(round(emission * density * DENSITY_SCALE));
+			ivec3 emission_i = ivec3(clamp(round(emission * density * EMISSION_SCALE), vec3(-2147483520.0), vec3(2147483520.0)));
 			for (int c = 0; c < 3; c++) {
 				if (emission_i[c] != 0) {
 					WORLD_GRID_ADD(emissive_only_map, pos, c, emission_i[c]);
