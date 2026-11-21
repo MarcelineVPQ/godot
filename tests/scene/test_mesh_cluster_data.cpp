@@ -225,6 +225,66 @@ TEST_CASE("[SceneTree][MeshClusterData] Every cut covers the mesh once") {
 	}
 }
 
+// Mirrors the selection's metric, projected_error() in cluster_lod_select.glsl: the error over the threshold, seen
+// from p_camera (mesh space) under an instance scale between p_min_scale and p_max_scale.
+static float projected_error(const Vector3 &p_camera, float p_pixel_scale, float p_min_scale, float p_max_scale, float p_z_near, const float *p_center, float p_radius, float p_error) {
+	const float world_error = p_error * p_max_scale * p_pixel_scale;
+	const float gap = p_camera.distance_to(Vector3(p_center[0], p_center[1], p_center[2])) * p_min_scale - p_radius * p_max_scale;
+	return world_error / MAX(gap, p_z_near);
+}
+
+TEST_CASE("[SceneTree][MeshClusterData] Every distance-dependent cut covers the mesh once") {
+	REQUIRE_MESSAGE(SurfaceTool::build_clusters_func != nullptr, "The meshoptimizer module bakes clusters.");
+	const Vector<uint8_t> data = bake(make_grid(64));
+	const MeshClusterData::View view(data);
+	REQUIRE(view.is_valid());
+	const Span<MeshClusterData::Group> groups = view.get_groups();
+	const Span<uint8_t> triangles = view.get_triangles();
+	const Span<float> positions = view.get_positions();
+
+	// Cameras around and above the grid, non-uniform scales, and pixel scales from cuts at the finest level to the
+	// coarsest, as the GPU selection picks them per instance.
+	RandomPCG rng(54321);
+	int levels_seen = 0;
+	for (int i = 0; i < 40; i++) {
+		const Vector3 camera(rng.random(-1.0f, 2.0f), rng.random(-1.0f, 2.0f), rng.random(0.05f, 3.0f));
+		const float min_scale = rng.random(0.25f, 1.0f);
+		const float max_scale = min_scale * rng.random(1.0f, 4.0f);
+		const float pixel_scale = Math::pow(10.0f, rng.random(0.0f, 6.0f));
+		const float z_near = 0.05f;
+
+		LocalVector<const MeshClusterData::Cluster *> cut;
+		for (const MeshClusterData::Cluster &cluster : view.get_clusters()) {
+			const MeshClusterData::Group &group = groups[cluster.group];
+			if (projected_error(camera, pixel_scale, min_scale, max_scale, z_near, cluster.center, cluster.radius, cluster.error) <= 1.0f &&
+					projected_error(camera, pixel_scale, min_scale, max_scale, z_near, group.center, group.radius, group.error) > 1.0f) {
+				cut.push_back(&cluster);
+				levels_seen |= 1 << MIN(cluster.level, 30u);
+			}
+		}
+
+		int wrong = 0;
+		for (int j = 0; j < 100; j++) {
+			const Vector2 point(0.2f + 0.6f * rng.randf(), 0.2f + 0.6f * rng.randf());
+			int covered = 0;
+			for (const MeshClusterData::Cluster *cluster : cut) {
+				for (uint32_t t = cluster->triangle_offset; t < cluster->triangle_offset + cluster->triangle_count; t++) {
+					Vector2 corners[3];
+					for (int k = 0; k < 3; k++) {
+						const uint32_t local = cluster->vertex_offset + triangles[t * 3 + k];
+						corners[k] = Vector2(positions[local * 3 + 0], positions[local * 3 + 1]);
+					}
+					covered += Geometry2D::is_point_in_triangle(point, corners[0], corners[1], corners[2]);
+				}
+			}
+			wrong += covered != 1;
+		}
+		CHECK_MESSAGE(wrong == 0, vformat("Camera %s, scales %f to %f, pixel scale %f: %d of 100 points not covered exactly once.", camera, min_scale, max_scale, pixel_scale, wrong));
+	}
+	// The cuts reached more than the finest level.
+	CHECK(levels_seen > 1);
+}
+
 } // namespace TestMeshClusterData
 
 #endif // _3D_DISABLED
