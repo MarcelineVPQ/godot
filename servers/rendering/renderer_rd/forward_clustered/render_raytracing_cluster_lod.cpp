@@ -35,6 +35,7 @@
 #include "core/templates/sort_array.h"
 #include "servers/rendering/renderer_rd/storage_rd/render_data_rd.h"
 #include "servers/rendering/renderer_rd/storage_rd/render_scene_buffers_rd.h"
+#include "servers/rendering/renderer_rd/uniform_set_cache_rd.h"
 #include "servers/rendering/rendering_device.h"
 #include "servers/rendering/rendering_server_enums.h"
 #include "servers/rendering/rendering_server_globals.h"
@@ -308,22 +309,15 @@ void RTClusterLodSelector::end_view(View &r_view, LocalVector<RID> &r_dirty_blas
 		}
 		rd->buffer_update(r_view.job_buffer, 0, count * sizeof(Job), jobs.ptr());
 
-		Vector<RD::Uniform> uniforms;
-		for (const RID &buffer : { r_view.job_buffer, r_view.stats_buffer }) {
-			RD::Uniform u;
-			u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
-			u.binding = uniforms.size();
-			u.append_id(buffer);
-			uniforms.push_back(u);
-		}
-		const RID uniform_set = rd->uniform_set_create(uniforms, shader.version_get_shader(shader_version, 0), 0, true);
+		const RD::Uniform u_jobs(RD::UNIFORM_TYPE_STORAGE_BUFFER, 0, r_view.job_buffer);
+		const RD::Uniform u_stats(RD::UNIFORM_TYPE_STORAGE_BUFFER, 1, r_view.stats_buffer);
+		const RID uniform_set = UniformSetCacheRD::get_singleton()->get_cache(shader.version_get_shader(shader_version, 0), 0, u_jobs, u_stats);
 		RENDER_TIMESTAMP("Cluster LOD Select");
 		RD::ComputeListID compute_list = rd->compute_list_begin();
 		rd->compute_list_bind_compute_pipeline(compute_list, pipeline);
 		rd->compute_list_bind_uniform_set(compute_list, uniform_set, 0);
 		rd->compute_list_dispatch(compute_list, count, 1, 1);
 		rd->compute_list_end();
-		rd->free_rid(uniform_set);
 		r_view.picked = count;
 	}
 	r_view.candidates.clear();
