@@ -177,7 +177,7 @@ vec3 rt_hit_prev_world_pos(vec3 hit_pos) {
 	}
 #endif
 #ifdef RT_HIT_ATTRIBS_DECLARED
-	prev_obj_pos = rt_prev_triangle_object_pos(geom, gl_PrimitiveID, attribs, prev_obj_pos);
+	prev_obj_pos = rt_prev_triangle_object_pos(geom, RT_HIT_PRIMITIVE_ID(geom), attribs, prev_obj_pos);
 #endif
 
 	return rt_prev_world_pos(geom_idx, prev_obj_pos, mat4(gl_ObjectToWorldEXT));
@@ -362,7 +362,7 @@ vec3 debug_directional_shadow_blocker(vec3 p_geometry_normal, uint p_receiver_sh
 		if (transparent && (mat_flags & (RT_MAT_FLAG_NO_RAY_QUERY_ALPHA | RT_MAT_FLAG_INSTANCE_FADE)) == RT_MAT_FLAG_NO_RAY_QUERY_ALPHA) {
 			continue;
 		}
-		vec4 surface = ray_query_surface(geometry_idx, rayQueryGetIntersectionPrimitiveIndexEXT(rq, false), rayQueryGetIntersectionBarycentricsEXT(rq, false), 0.0);
+		vec4 surface = ray_query_surface(geometry_idx, RT_RQ_PRIMITIVE_ID(geometry_idx, rq, false), rayQueryGetIntersectionBarycentricsEXT(rq, false), 0.0);
 		if (transparent) {
 			// Expected value of ray_query_shadow_transmittance's stochastic coverage.
 			transmittance *= (1.0 - surface.a) * mix(vec3(1.0), surface.rgb, surface.a);
@@ -713,11 +713,11 @@ vec2 dlss_rr_specular_motion_vector(vec3 p_hit_pos, vec3 p_prev_hit_pos, vec3 p_
 	// A/B: TerminateOnFirstHit stops at whichever hit traversal finds first, not the closest.
 	rayQueryInitializeEXT(spec_rq, tlas, RT_RAY_FLAGS | gl_RayFlagsTerminateOnFirstHitEXT, p_mask, spec_origin, 0.001, spec_dir, 10000.0);
 	while (rayQueryProceedEXT(spec_rq)) {
-		if (rayQueryGetIntersectionTypeEXT(spec_rq, false) == gl_RayQueryCandidateIntersectionTriangleEXT &&
-				ray_query_alpha_test(
-						RT_RQ_GEOMETRY_IDX(spec_rq, false),
-						rayQueryGetIntersectionPrimitiveIndexEXT(spec_rq, false),
-						rayQueryGetIntersectionBarycentricsEXT(spec_rq, false))) {
+		if (rayQueryGetIntersectionTypeEXT(spec_rq, false) != gl_RayQueryCandidateIntersectionTriangleEXT) {
+			continue;
+		}
+		uint candidate_geom_idx = RT_RQ_GEOMETRY_IDX(spec_rq, false);
+		if (ray_query_alpha_test(candidate_geom_idx, RT_RQ_PRIMITIVE_ID(candidate_geom_idx, spec_rq, false), rayQueryGetIntersectionBarycentricsEXT(spec_rq, false))) {
 			rayQueryConfirmIntersectionEXT(spec_rq);
 		}
 	}
@@ -731,7 +731,7 @@ vec2 dlss_rr_specular_motion_vector(vec3 p_hit_pos, vec3 p_prev_hit_pos, vec3 p_
 	vec3 reflected_pos = spec_origin + spec_dir * spec_t;
 	uint reflected_geom_idx = RT_RQ_GEOMETRY_IDX(spec_rq, true);
 	vec3 reflected_obj_pos = rt_prev_triangle_object_pos(geometries[reflected_geom_idx],
-			uint(rayQueryGetIntersectionPrimitiveIndexEXT(spec_rq, true)),
+			RT_RQ_PRIMITIVE_ID(reflected_geom_idx, spec_rq, true),
 			rayQueryGetIntersectionBarycentricsEXT(spec_rq, true),
 			(mat4(rayQueryGetIntersectionWorldToObjectEXT(spec_rq, true)) * vec4(reflected_pos, 1.0)).xyz);
 	vec3 reflected_prev_pos = rt_prev_world_pos(reflected_geom_idx, reflected_obj_pos,

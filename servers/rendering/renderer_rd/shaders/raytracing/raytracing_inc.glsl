@@ -7,9 +7,13 @@
 #define MAX_VIEWS 2
 
 // Per-geometry entry (geometries, materials, motion) of a hit. A TLAS instance's custom index is its
-// first entry; multi-geometry BLASes store one entry per geometry, in geometry order.
-#define RT_HIT_GEOMETRY_IDX (gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT)
-#define RT_RQ_GEOMETRY_IDX(m_rq, m_committed) uint(rayQueryGetIntersectionInstanceCustomIndexEXT(m_rq, m_committed) + rayQueryGetIntersectionGeometryIndexEXT(m_rq, m_committed))
+// first entry; multi-geometry BLASes store one entry per geometry, in geometry order. BLASes built from
+// clusters have one entry and report the cluster as the geometry index, see rt_geometry_idx().
+#define RT_HIT_GEOMETRY_IDX rt_geometry_idx(uint(gl_InstanceCustomIndexEXT), uint(gl_GeometryIndexEXT))
+#define RT_RQ_GEOMETRY_IDX(m_rq, m_committed) rt_geometry_idx(uint(rayQueryGetIntersectionInstanceCustomIndexEXT(m_rq, m_committed)), uint(rayQueryGetIntersectionGeometryIndexEXT(m_rq, m_committed)))
+// Triangle of a hit in its geometry entry's index buffer; see rt_primitive_id().
+#define RT_HIT_PRIMITIVE_ID(m_geom) rt_primitive_id(m_geom, uint(gl_GeometryIndexEXT), uint(gl_PrimitiveID))
+#define RT_RQ_PRIMITIVE_ID(m_geometry_idx, m_rq, m_committed) rt_primitive_id(geometries[m_geometry_idx], uint(rayQueryGetIntersectionGeometryIndexEXT(m_rq, m_committed)), uint(rayQueryGetIntersectionPrimitiveIndexEXT(m_rq, m_committed)))
 
 #ifndef PI
 #define PI 3.141592653589f
@@ -280,6 +284,8 @@ const uint FLAG_FACING_INVERTED = 32u;
 const uint FLAG_SIDE_CHECK = 64u;
 // SELF_SHADOWING receiver: its shadow rays keep RT_PARAM_SELF_SHADOW_MASK.
 const uint FLAG_SELF_SHADOWING = 128u;
+// Traced from clusters: the hit's geometry index is a cluster, see ClusterData.
+const uint FLAG_CLUSTERS = 256u;
 
 // ============================================================================
 // RANDOM NUMBER GENERATION - PCG (Permuted Congruential Generator)

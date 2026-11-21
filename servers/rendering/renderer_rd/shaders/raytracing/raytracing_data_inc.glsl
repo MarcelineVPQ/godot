@@ -11,8 +11,21 @@ layout(buffer_reference, std430) readonly buffer Uint32Buffer {
 	uint v[];
 };
 
+// Per-cluster data of geometry traced from clusters (matches C++ RTClusterData, 32 bytes).
+struct ClusterData {
+	uint triangle_offset; // First triangle of the cluster in the geometry's index buffer.
+	uint group;
+	uint level; // Bits 0-15: level of the cluster, 0 for the source mesh. Bits 16-31: levels of the mesh.
+	float error; // Simplification error against the source mesh, in mesh space.
+	vec3 center; // Bounds of the error, in mesh space.
+	float radius;
+};
+layout(buffer_reference, std430) readonly buffer ClusterBuffer {
+	ClusterData v[];
+};
+
 // ============================================================================
-// GEOMETRY DATA (matches C++ RT_GeometryData, 152 bytes, 8-byte alignment)
+// GEOMETRY DATA (matches C++ RT_GeometryData, 160 bytes, 8-byte alignment)
 // ============================================================================
 struct GeometryData {
 	uint64_t vertex_address;
@@ -58,7 +71,17 @@ struct GeometryData {
 	uint debug_state; // See RTDynamicGeometryDebug::pack().
 	uint material_index; // See rt_pack_material_index().
 	uint material_flags;
+	uint64_t cluster_address; // ClusterBuffer of geometry traced from clusters (FLAG_CLUSTERS), else 0.
 };
+
+// Triangle p_primitive of geometry index p_geometry_index of a hit, as an index into the triangles of p_geom.
+// Clusters number their triangles from 0, so a cluster's first triangle is added.
+uint rt_primitive_id(GeometryData p_geom, uint p_geometry_index, uint p_primitive) {
+	if ((p_geom.flags & FLAG_CLUSTERS) == 0u) {
+		return p_primitive;
+	}
+	return ClusterBuffer(p_geom.cluster_address).v[p_geometry_index].triangle_offset + p_primitive;
+}
 
 // ============================================================================
 // PER-INSTANCE MOTION DATA (matches C++ RT_InstanceMotionData, 48 bytes)

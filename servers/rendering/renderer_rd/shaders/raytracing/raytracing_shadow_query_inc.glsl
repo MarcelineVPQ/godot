@@ -54,7 +54,7 @@ vec3 ray_query_shadow_transmittance(vec3 origin, vec3 direction, float t_min, fl
 			continue;
 		}
 
-		vec4 surface = ray_query_surface(geometry_idx, rayQueryGetIntersectionPrimitiveIndexEXT(shadow_rq, false), rayQueryGetIntersectionBarycentricsEXT(shadow_rq, false), lod);
+		vec4 surface = ray_query_surface(geometry_idx, RT_RQ_PRIMITIVE_ID(geometry_idx, shadow_rq, false), rayQueryGetIntersectionBarycentricsEXT(shadow_rq, false), lod);
 		if (transparent_shadow && rand(rng_state) >= surface.a) {
 			transmittance *= mix(vec3(1.0), surface.rgb, surface.a);
 		} else if (transparent_shadow || surface.a >= 0.5) {

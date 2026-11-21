@@ -34,6 +34,7 @@
 #include "core/os/os.h"
 #include "core/templates/radix_sort.h"
 #include "core/templates/sort_array.h"
+#include "servers/rendering/mesh_cluster_data.h"
 #include "servers/rendering/renderer_rd/environment/sky.h"
 #include "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h"
 #include "servers/rendering/renderer_rd/forward_clustered/scene_shader_raytracing.h"
@@ -106,6 +107,13 @@ static void _free_rid_if_valid(RID &r_rid) {
 	if (r_rid.is_valid()) {
 		RD::get_singleton()->free_rid(r_rid);
 		r_rid = RID();
+	}
+}
+
+// Call after the BLAS built from them was released.
+static void _free_cluster_buffers(RTClusterBuffers &r_buffers) {
+	for (RID *buffer : { &r_buffers.positions, &r_buffers.triangles, &r_buffers.indices, &r_buffers.clusters }) {
+		_free_rid_if_valid(*buffer);
 	}
 }
 
@@ -496,6 +504,16 @@ void RenderRaytracing::initialize(RenderForwardClustered *p_owner) {
 		mm_merge_shader.pipeline[i] = RD::get_singleton()->compute_pipeline_create(mm_merge_shader.version_shader[i]);
 		RD::get_singleton()->set_resource_name(mm_merge_shader.pipeline[i], "RT MM merge pipeline [mode=" + itos(i) + "]");
 	}
+
+	cluster_geometry = GLOBAL_GET("rendering/pathtracing/cluster_geometry/enabled");
+	if (cluster_geometry && !RD::get_singleton()->has_feature(RD::SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE)) {
+		WARN_PRINT("Path tracing: Cluster geometry is enabled in the Project Settings, but this GPU or driver doesn't support cluster acceleration structures (VK_NV_cluster_acceleration_structure). Meshes are path traced without their clusters.");
+		cluster_geometry = false;
+	}
+}
+
+bool RenderRaytracing::surface_traced_from_clusters(void *p_mesh_surface) const {
+	return cluster_geometry && !RendererRD::MeshStorage::get_singleton()->mesh_surface_get_cluster_data(p_mesh_surface).is_empty();
 }
 
 RenderRaytracing::~RenderRaytracing() {
@@ -831,6 +849,7 @@ void RenderRaytracing::cleanup_caches() {
 				RTCacheEntry *entry = &surface_chunks[i][j];
 				if (entry->ptr) {
 					_free_blas_resources(blas_transform_pool, entry->ptr->blas, &entry->ptr->blas_transform, 1);
+					_free_cluster_buffers(entry->ptr->cluster_buffers);
 					memdelete(entry->ptr);
 					entry->ptr = nullptr;
 				}
@@ -1265,12 +1284,15 @@ RTSurfaceData *RenderRaytracing::process_surface_cached(
 		entry->ptr = memnew(RTSurfaceData);
 	} else {
 		_free_blas_resources(blas_transform_pool, entry->ptr->blas, &entry->ptr->blas_transform, 1);
+		_free_cluster_buffers(entry->ptr->cluster_buffers);
 	}
 
 	RTSurfaceData *surf_data = entry->ptr;
 
 	void *mesh_surface = static_cast<const RenderForwardClustered::GeometryInstanceSurfaceDataCache *>(p_surf)->surface;
-	_populate_surface_blas(mesh_surface, RID(), RID(), false, false, false, cache_key, surf_data, r_dirty_blas_list);
+	if (!surface_traced_from_clusters(mesh_surface) || !_populate_cluster_blas(mesh_surface, cache_key, surf_data, r_dirty_blas_list)) {
+		_populate_surface_blas(mesh_surface, RID(), RID(), false, false, false, cache_key, surf_data, r_dirty_blas_list);
+	}
 
 	if (!surf_data->blas.is_valid()) {
 		return surf_data;
@@ -2555,6 +2577,106 @@ void RenderRaytracing::_populate_surface_blas(
 	if (!r_surf_data->blas.is_valid()) {
 		_free_blas_resources(blas_transform_pool, r_surf_data->blas, &r_surf_data->blas_transform, 1);
 	}
+}
+
+// Traces the surface from the finest clusters of its MeshClusterData: one cluster acceleration structure per cluster,
+// in one BLAS. False when the data can't be traced, after a warning; the caller then builds the usual BLAS.
+bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_cache_key, RTSurfaceData *r_surf_data, LocalVector<RID> &r_dirty_blas_list) {
+	RD *rd = RD::get_singleton();
+	RendererRD::MeshStorage *mesh_storage = RendererRD::MeshStorage::get_singleton();
+	const Vector<uint8_t> &data = mesh_storage->mesh_surface_get_cluster_data(p_mesh_surface);
+	const MeshClusterData::View view(data);
+	const uint32_t surface_vertex_count = mesh_storage->mesh_surface_get_vertex_count(p_mesh_surface);
+	const bool triangles = mesh_storage->mesh_surface_get_primitive(p_mesh_surface) == RSE::PRIMITIVE_TRIANGLES;
+	if (!view.is_valid() || !triangles || view.get_header().finest_cluster_count == 0) {
+		WARN_PRINT_ONCE("Path tracing: A mesh surface has cluster data this version can't read; it is traced without clusters. Reimport the mesh to bake its clusters again.");
+		return false;
+	}
+
+	const MeshClusterData::Header &header = view.get_header();
+	const Span<MeshClusterData::Cluster> clusters = view.get_clusters();
+	const Span<uint8_t> local_triangles = view.get_triangles();
+	const Span<uint32_t> local_vertices = view.get_vertices();
+
+	// The finest clusters come first, with their triangles and vertices.
+	LocalVector<RD::AccelerationStructureCluster> as_clusters;
+	LocalVector<uint32_t> indices;
+	as_clusters.resize(header.finest_cluster_count);
+	indices.resize(header.finest_triangle_count * 3);
+	for (uint32_t c = 0; c < header.finest_cluster_count; c++) {
+		const MeshClusterData::Cluster &cluster = clusters[c];
+		ERR_FAIL_COND_V(cluster.level != 0 || cluster.triangle_offset + cluster.triangle_count > header.finest_triangle_count || cluster.vertex_offset + cluster.vertex_count > header.finest_vertex_count, false);
+		RD::AccelerationStructureCluster &as_cluster = as_clusters[c];
+		as_cluster.geometry_index = c;
+		as_cluster.triangle_count = cluster.triangle_count;
+		as_cluster.vertex_count = cluster.vertex_count;
+		as_cluster.first_triangle = cluster.triangle_offset;
+		as_cluster.first_vertex = cluster.vertex_offset;
+		for (uint32_t i = cluster.triangle_offset * 3; i < (cluster.triangle_offset + cluster.triangle_count) * 3; i++) {
+			const uint32_t local = local_triangles[i];
+			ERR_FAIL_COND_V(local >= cluster.vertex_count, false);
+			indices[i] = local_vertices[cluster.vertex_offset + local];
+			if (indices[i] >= surface_vertex_count) {
+				WARN_PRINT_ONCE("Path tracing: A mesh surface's clusters don't match its vertices; it is traced without clusters. Reimport the mesh to bake its clusters again.");
+				return false;
+			}
+		}
+	}
+
+	LocalVector<RTClusterData> cluster_data;
+	cluster_data.resize(header.cluster_count);
+	for (uint32_t c = 0; c < header.cluster_count; c++) {
+		const MeshClusterData::Cluster &cluster = clusters[c];
+		RTClusterData &gpu = cluster_data[c];
+		gpu.triangle_offset = cluster.triangle_offset;
+		gpu.group = cluster.group;
+		gpu.level = MIN(cluster.level, 0xFFFFu) | (MIN(header.level_count, 0xFFFFu) << 16);
+		gpu.error = cluster.error;
+		memcpy(gpu.center, cluster.center, sizeof(gpu.center));
+		gpu.radius = cluster.radius;
+	}
+
+	const BitField<RD::BufferCreationBits> input_bits = RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT | RD::BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT;
+	const uint64_t triangle_bytes = (uint64_t(header.finest_triangle_count) * 3 + 3) & ~uint64_t(3);
+	const String key = itos(p_cache_key);
+	RTClusterBuffers &buffers = r_surf_data->cluster_buffers;
+	buffers.positions = rd->storage_buffer_create(header.finest_vertex_count * sizeof(float) * 3, Span<uint8_t>(reinterpret_cast<const uint8_t *>(view.get_positions().ptr()), uint64_t(header.finest_vertex_count) * sizeof(float) * 3), 0, input_bits);
+	buffers.triangles = rd->storage_buffer_create(triangle_bytes, Span<uint8_t>(local_triangles.ptr(), triangle_bytes), 0, input_bits);
+	buffers.indices = rd->storage_buffer_create(indices.size() * sizeof(uint32_t), Span<uint8_t>(reinterpret_cast<const uint8_t *>(indices.ptr()), indices.size() * sizeof(uint32_t)), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+	buffers.clusters = rd->storage_buffer_create(cluster_data.size() * sizeof(RTClusterData), Span<uint8_t>(reinterpret_cast<const uint8_t *>(cluster_data.ptr()), cluster_data.size() * sizeof(RTClusterData)), 0, RD::BUFFER_CREATION_DEVICE_ADDRESS_BIT);
+	if (!buffers.positions.is_valid() || !buffers.triangles.is_valid() || !buffers.indices.is_valid() || !buffers.clusters.is_valid()) {
+		_free_cluster_buffers(buffers);
+		ERR_FAIL_V_MSG(false, "Path tracing: Couldn't allocate the cluster buffers of a mesh surface; it is traced without clusters.");
+	}
+	rd->set_resource_name(buffers.positions, "RT cluster positions [" + key + "]");
+	rd->set_resource_name(buffers.triangles, "RT cluster triangles [" + key + "]");
+	rd->set_resource_name(buffers.indices, "RT cluster indices [" + key + "]");
+	rd->set_resource_name(buffers.clusters, "RT cluster data [" + key + "]");
+
+	r_surf_data->blas = rd->blas_create_from_clusters(buffers.positions, buffers.triangles, as_clusters, {}, RD::ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT);
+	if (!r_surf_data->blas.is_valid()) {
+		_free_cluster_buffers(buffers);
+		WARN_PRINT_ONCE("Path tracing: A mesh surface's clusters couldn't be built into an acceleration structure; it is traced without clusters. See the error above.");
+		return false;
+	}
+	rd->set_resource_name(r_surf_data->blas, "RT cluster BLAS [" + key + "]");
+	r_dirty_blas_list.push_back(r_surf_data->blas);
+
+	// Shading reads the surface's own vertex buffers through the cluster triangles' surface indices.
+	_fill_surface_geometry_data(p_mesh_surface, false, r_surf_data);
+	RT_GeometryData &geom = r_surf_data->geometry;
+	RTGeometrySources &sources = r_surf_data->sources;
+	geom.vertex_buffer_address = _rt_buffer_address(mesh_storage->mesh_surface_get_vertex_buffer(p_mesh_surface), sources.vertex);
+	const RID attribute_buffer = mesh_storage->mesh_surface_get_attribute_buffer(p_mesh_surface);
+	if (attribute_buffer.is_valid()) {
+		geom.attribute_buffer_address = _rt_buffer_address(attribute_buffer, sources.attribute);
+	}
+	geom.index_buffer_address = _rt_buffer_address(buffers.indices, sources.index);
+	geom.index_format = RT_INDEX_FORMAT_UINT32;
+	geom.primitive_count = header.finest_triangle_count;
+	geom.cluster_address = _rt_buffer_address(buffers.clusters, sources.clusters);
+	geom.flags |= RT_GEOM_FLAG_CLUSTERS;
+	return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -4681,7 +4803,8 @@ bool RTTlasBuilder::_plan_mesh_instance(const RTPlanContext &p_ctx, RTPlanScratc
 		if (surf->shader && surface.deformed_kind != RT_PLAN_DEFORMED_CAPTURED) {
 			rec.key.billboard = surf->shader->billboard;
 		}
-		rec.key.groupable = surf->surface_index < 64 && surface.deformed_kind == RT_PLAN_DEFORMED_NONE;
+		// A BLAS built from clusters holds one surface: its geometry indices are clusters.
+		rec.key.groupable = surf->surface_index < 64 && surface.deformed_kind == RT_PLAN_DEFORMED_NONE && !rt.surface_traced_from_clusters(surf->surface);
 		if (RenderRaytracing::is_capture_surface(surf, p_ctx.capture_mode)) {
 			record.flags |= RT_PLAN_INSTANCE_DYNAMIC;
 		}

@@ -74,7 +74,7 @@ namespace RendererSceneRenderImplementation {
 class RenderForwardClustered;
 class SceneShaderRaytracing;
 
-// Must match GLSL GeometryData (std430, 144 bytes, 8-byte alignment).
+// Must match GLSL GeometryData (std430, 160 bytes, 8-byte alignment).
 struct alignas(8) RT_GeometryData {
 	uint64_t vertex_buffer_address;
 	uint64_t attribute_buffer_address;
@@ -111,8 +111,20 @@ struct alignas(8) RT_GeometryData {
 	uint32_t debug_state; // See RTDynamicGeometryDebug::pack().
 	uint32_t material_index; // See rt_pack_material_index().
 	uint32_t material_flags;
+	uint64_t cluster_address; // RTClusterData of geometry traced from clusters (RT_GEOM_FLAG_CLUSTERS), else 0.
 };
-static_assert(sizeof(RT_GeometryData) == 152, "RT_GeometryData must be 152 bytes for std430");
+static_assert(sizeof(RT_GeometryData) == 160, "RT_GeometryData must be 160 bytes for std430");
+
+// Must match GLSL ClusterData (std430, 32 bytes): one per cluster of a surface traced from clusters.
+struct RTClusterData {
+	uint32_t triangle_offset; // First triangle of the cluster in the geometry's index buffer.
+	uint32_t group;
+	uint32_t level; // Bits 0-15: level of the cluster. Bits 16-31: levels of the mesh.
+	float error;
+	float center[3];
+	float radius;
+};
+static_assert(sizeof(RTClusterData) == 32, "RTClusterData must be 32 bytes for std430");
 
 // Marks an absent field in RT_GeometryData::instance_data_layout.
 static constexpr uint32_t RT_INSTANCE_DATA_FIELD_NONE = 0xFF;
@@ -518,6 +530,8 @@ enum {
 	RT_GEOM_FLAG_SIDE_CHECK = 64u,
 	// SHADOW_CASTING_SETTING_SELF_SHADOWING receiver: its shadow rays keep the self-shadow group bit.
 	RT_GEOM_FLAG_SELF_SHADOWING = 128u,
+	// Traced from clusters: hits report the cluster as their geometry index, see RTClusterData.
+	RT_GEOM_FLAG_CLUSTERS = 256u,
 };
 
 // Facing state of the path traced triangles of one TLAS instance.
@@ -627,10 +641,20 @@ struct RTGeometrySources {
 	RID index;
 	RID prev_vertex;
 	RID instance_data;
+	RID clusters;
+};
+
+// Buffers of a surface traced from clusters, owned by its RTSurfaceData. RD frees the BLAS with them.
+struct RTClusterBuffers {
+	RID positions; // Cluster vertex positions, three floats each.
+	RID triangles; // Cluster-local vertex indices, one byte each.
+	RID indices; // Surface vertex indices of the cluster triangles, for shading.
+	RID clusters; // RTClusterData of every cluster.
 };
 
 struct RTSurfaceData {
 	RID blas;
+	RTClusterBuffers cluster_buffers; // Only for surfaces traced from clusters.
 	// Maps compressed positions to mesh space during the BLAS build; invalid when uncompressed.
 	RTBlasTransformPool::Slot blas_transform;
 	RT_GeometryData geometry = {};
@@ -1130,6 +1154,9 @@ class RenderRaytracing {
 
 	RID bindless_uniform_set;
 
+	// rendering/pathtracing/cluster_geometry/enabled, when the device supports cluster acceleration structures.
+	bool cluster_geometry = false;
+
 	// Caching (chunked sparse caches indexed by RID low bits / 256).
 	Vector<RTCacheEntry *> surface_chunks;
 	Vector<RTMaterialCacheEntry *> material_chunks;
@@ -1454,6 +1481,7 @@ class RenderRaytracing {
 			uint32_t p_cache_key,
 			RTSurfaceData *r_surf_data,
 			LocalVector<RID> &r_dirty_blas_list);
+	bool _populate_cluster_blas(void *p_mesh_surface, uint32_t p_cache_key, RTSurfaceData *r_surf_data, LocalVector<RID> &r_dirty_blas_list);
 	RTMaterialData *process_material(RID p_material_rid, uint16_t p_material_invalidation_counter);
 	bool _build_merged_mm_blas(
 			const RTInstanceSource &p_source,
@@ -1506,6 +1534,9 @@ public:
 	void initialize(RenderForwardClustered *p_owner);
 
 	void cleanup_caches();
+
+	// True when the static geometry of p_mesh_surface (a mesh storage surface) is traced from its clusters.
+	bool surface_traced_from_clusters(void *p_mesh_surface) const;
 
 	// Value of the rendering/pathtracing/vertex_capture_mode project setting.
 	static RTVertexCapture::Mode read_capture_mode();
