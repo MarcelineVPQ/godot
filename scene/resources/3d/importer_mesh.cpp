@@ -1522,6 +1522,7 @@ Error ImporterMesh::lightmap_unwrap_cached(const Transform3D &p_base_transform, 
 	}
 
 	//remove surfaces
+	// The surfaces made again below have no clusters: the old ones indexed the vertices the unwrap splits.
 	clear();
 
 	print_verbose("Mesh: Gen indices: " + itos(gen_index_count));

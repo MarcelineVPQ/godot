@@ -93,7 +93,9 @@ struct Cluster {
 
 static_assert(sizeof(Header) == 40 && sizeof(Group) == 24 && sizeof(Cluster) == 48);
 
-// Read-only view of baked data; is_valid() is false when the data is empty or malformed.
+// Read-only view of baked data; is_valid() is false when the data is empty or malformed. Every record of valid data has
+// been checked against the header, so readers may index with it directly. Surface vertex indices (`vertices`) can only
+// be checked against the surface, by the reader.
 class View {
 	const Header *header = nullptr;
 	const Group *groups = nullptr;
@@ -101,6 +103,49 @@ class View {
 	const uint8_t *triangles = nullptr;
 	const uint32_t *vertices = nullptr;
 	const float *positions = nullptr;
+
+	bool _validate() const {
+		const Header &h = *header;
+		if (h.level_count == 0 || h.finest_cluster_count == 0 || h.finest_cluster_count > h.cluster_count || h.finest_triangle_count > h.triangle_count || h.finest_vertex_count > h.vertex_count) {
+			return false;
+		}
+		for (uint32_t g = 0; g < h.group_count; g++) {
+			if (groups[g].level >= h.level_count) {
+				return false;
+			}
+		}
+		uint32_t previous_level = 0;
+		for (uint32_t c = 0; c < h.cluster_count; c++) {
+			const Cluster &cluster = clusters[c];
+			const bool finest = c < h.finest_cluster_count;
+			// Sorted by level, the source mesh's clusters first; each in a group of its level, made from a group of the
+			// level before.
+			if (cluster.level < previous_level || cluster.level >= h.level_count || finest != (cluster.level == 0)) {
+				return false;
+			}
+			previous_level = cluster.level;
+			if (cluster.group >= h.group_count || groups[cluster.group].level != cluster.level) {
+				return false;
+			}
+			if (finest ? cluster.refined != -1 : (cluster.refined < 0 || uint32_t(cluster.refined) >= h.group_count || groups[cluster.refined].level + 1 != cluster.level)) {
+				return false;
+			}
+			if (cluster.triangle_count == 0 || cluster.triangle_count > MAX_CLUSTER_TRIANGLES || cluster.vertex_count == 0 || cluster.vertex_count > MAX_CLUSTER_VERTICES) {
+				return false;
+			}
+			const uint64_t triangle_end = uint64_t(cluster.triangle_offset) + cluster.triangle_count;
+			const uint64_t vertex_end = uint64_t(cluster.vertex_offset) + cluster.vertex_count;
+			if (triangle_end > (finest ? h.finest_triangle_count : h.triangle_count) || vertex_end > (finest ? h.finest_vertex_count : h.vertex_count)) {
+				return false;
+			}
+			for (uint64_t i = uint64_t(cluster.triangle_offset) * 3; i < triangle_end * 3; i++) {
+				if (triangles[i] >= cluster.vertex_count) {
+					return false;
+				}
+			}
+		}
+		return true;
+	}
 
 public:
 	explicit View(const Vector<uint8_t> &p_data) {
@@ -127,6 +172,9 @@ public:
 		triangles = ptr + triangles_offset;
 		vertices = reinterpret_cast<const uint32_t *>(ptr + vertices_offset);
 		positions = reinterpret_cast<const float *>(ptr + positions_offset);
+		if (!_validate()) {
+			header = nullptr;
+		}
 	}
 
 	bool is_valid() const { return header != nullptr; }

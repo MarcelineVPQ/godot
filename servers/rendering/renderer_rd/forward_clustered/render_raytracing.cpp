@@ -2588,7 +2588,7 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 	const MeshClusterData::View view(data);
 	const uint32_t surface_vertex_count = mesh_storage->mesh_surface_get_vertex_count(p_mesh_surface);
 	const bool triangles = mesh_storage->mesh_surface_get_primitive(p_mesh_surface) == RSE::PRIMITIVE_TRIANGLES;
-	if (!view.is_valid() || !triangles || view.get_header().finest_cluster_count == 0) {
+	if (!view.is_valid() || !triangles) {
 		WARN_PRINT_ONCE("Path tracing: A mesh surface has cluster data this version can't read; it is traced without clusters. Reimport the mesh to bake its clusters again.");
 		return false;
 	}
@@ -2598,14 +2598,13 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 	const Span<uint8_t> local_triangles = view.get_triangles();
 	const Span<uint32_t> local_vertices = view.get_vertices();
 
-	// The finest clusters come first, with their triangles and vertices.
+	// The finest clusters come first, with their triangles and vertices; View checked their ranges.
 	LocalVector<RD::AccelerationStructureCluster> as_clusters;
 	LocalVector<uint32_t> indices;
 	as_clusters.resize(header.finest_cluster_count);
 	indices.resize(header.finest_triangle_count * 3);
 	for (uint32_t c = 0; c < header.finest_cluster_count; c++) {
 		const MeshClusterData::Cluster &cluster = clusters[c];
-		ERR_FAIL_COND_V(cluster.level != 0 || cluster.triangle_offset + cluster.triangle_count > header.finest_triangle_count || cluster.vertex_offset + cluster.vertex_count > header.finest_vertex_count, false);
 		RD::AccelerationStructureCluster &as_cluster = as_clusters[c];
 		as_cluster.geometry_index = c;
 		as_cluster.triangle_count = cluster.triangle_count;
@@ -2613,9 +2612,7 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 		as_cluster.first_triangle = cluster.triangle_offset;
 		as_cluster.first_vertex = cluster.vertex_offset;
 		for (uint32_t i = cluster.triangle_offset * 3; i < (cluster.triangle_offset + cluster.triangle_count) * 3; i++) {
-			const uint32_t local = local_triangles[i];
-			ERR_FAIL_COND_V(local >= cluster.vertex_count, false);
-			indices[i] = local_vertices[cluster.vertex_offset + local];
+			indices[i] = local_vertices[cluster.vertex_offset + local_triangles[i]];
 			if (indices[i] >= surface_vertex_count) {
 				WARN_PRINT_ONCE("Path tracing: A mesh surface's clusters don't match its vertices; it is traced without clusters. Reimport the mesh to bake its clusters again.");
 				return false;

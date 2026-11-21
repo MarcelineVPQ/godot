@@ -594,6 +594,9 @@ void MeshStorage::mesh_surface_update_vertex_region(RID p_mesh, int p_surface, i
 
 	RD::get_singleton()->buffer_update(mesh->surfaces[p_surface]->vertex_buffer, p_offset, data_size, r);
 
+	// The clusters hold copies of the old positions, so the surface is traced without them from now on.
+	mesh->surfaces[p_surface]->cluster_data.clear();
+
 	// Invalidate RT cache for this surface.
 	mesh->surfaces[p_surface]->rt_invalidation_counter = _next_rt_invalidation_counter();
 }
