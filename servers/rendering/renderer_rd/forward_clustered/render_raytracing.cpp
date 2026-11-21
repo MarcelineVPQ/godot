@@ -2675,6 +2675,7 @@ bool RenderRaytracing::_populate_cluster_blas(void *p_mesh_surface, uint32_t p_c
 	geom.index_format = RT_INDEX_FORMAT_UINT32;
 	geom.primitive_count = header.finest_triangle_count;
 	geom.cluster_address = _rt_buffer_address(buffers.clusters, sources.clusters);
+	sources.cluster_count = header.cluster_count;
 	geom.flags |= RT_GEOM_FLAG_CLUSTERS;
 	return true;
 }
@@ -3516,9 +3517,9 @@ RTMaterialData *RenderRaytracing::process_material(RID p_material_rid, uint16_t 
 Error RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, const LocalVector<RID> &p_dirty_blas_list, const LocalVector<RID> &p_dirty_blas_update_list) {
 	RENDER_TIMESTAMP("Acceleration Structure Build");
 
-	_prepare_tlas(p_state->tlas, p_state->tlas_max_instances, tlas_instances, "RT TLAS", tlas_instance_scratch);
+	_prepare_tlas(p_state->tlas, p_state->tlas_max_instances, tlas_instances, &geometry_data, "RT TLAS", tlas_instance_scratch);
 	// Built even when empty so the raygen binding stays valid.
-	_prepare_tlas(p_state->tlas_transparent, p_state->tlas_transparent_max_instances, tlas_transparent_instances, "RT TLAS Transparent", tlas_transparent_instance_scratch);
+	_prepare_tlas(p_state->tlas_transparent, p_state->tlas_transparent_max_instances, tlas_transparent_instances, &geometry_data, "RT TLAS Transparent", tlas_transparent_instance_scratch);
 	RD::TLASBuild tlas_builds[] = {
 		{ p_state->tlas, tlas_instance_scratch },
 		{ p_state->tlas_transparent, tlas_transparent_instance_scratch },
@@ -3531,11 +3532,11 @@ Error RenderRaytracing::build_acceleration_structures(RTViewportState *p_state, 
 }
 
 Error RenderRaytracing::_build_one_tlas(RID &r_tlas, uint32_t &r_max_instances, const RTInstanceArrays &p_instances, const String &p_name) {
-	_prepare_tlas(r_tlas, r_max_instances, p_instances, p_name, tlas_instance_scratch);
+	_prepare_tlas(r_tlas, r_max_instances, p_instances, nullptr, p_name, tlas_instance_scratch);
 	return _rt_tlas_build(r_tlas, tlas_instance_scratch);
 }
 
-void RenderRaytracing::_prepare_tlas(RID &r_tlas, uint32_t &r_max_instances, const RTInstanceArrays &p_instances, const String &p_name, LocalVector<RD::AccelerationStructureInstance> &r_instances) {
+void RenderRaytracing::_prepare_tlas(RID &r_tlas, uint32_t &r_max_instances, const RTInstanceArrays &p_instances, const LocalVector<RT_GeometryData> *p_geometries, const String &p_name, LocalVector<RD::AccelerationStructureInstance> &r_instances) {
 	uint32_t needed = MAX(p_instances.blass.size(), (uint32_t)1);
 	if (!r_tlas.is_valid() || needed > r_max_instances) {
 		if (r_tlas.is_valid()) {
@@ -3550,6 +3551,13 @@ void RenderRaytracing::_prepare_tlas(RID &r_tlas, uint32_t &r_max_instances, con
 	for (uint32_t i = 0; i < p_instances.blass.size(); i++) {
 		RD::AccelerationStructureInstance &inst = r_instances[i];
 		inst.id = p_instances.custom_indices[i];
+		if (p_geometries) {
+			// Shaders find the geometry entry of a cluster hit from this bit alone, see rt_geometry_idx().
+			ERR_CONTINUE_MSG(inst.id >= RT_INSTANCE_CLUSTERS_BIT, "Too many path traced geometry entries for a TLAS custom index.");
+			if ((*p_geometries)[inst.id].flags & RT_GEOM_FLAG_CLUSTERS) {
+				inst.id |= RT_INSTANCE_CLUSTERS_BIT;
+			}
+		}
 		inst.transform = p_instances.transforms[i];
 		inst.blas = p_instances.blass[i];
 		inst.flags = BitField<RD::AccelerationStructureInstanceFlagBits>(p_instances.flags[i]);

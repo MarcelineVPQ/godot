@@ -431,7 +431,7 @@ vec3 debug_cluster_color(int p_vis_mode) {
 	ClusterData data = ClusterBuffer(geom.cluster_address).v[cluster];
 	uint instance_seed = pcg_hash(uint(gl_InstanceCustomIndexEXT));
 	if (p_vis_mode == RT_VIS_CLUSTER_TRIANGLES) {
-		return debug_hash_color(pcg_hash(instance_seed ^ (data.triangle_offset + uint(gl_PrimitiveID))));
+		return debug_hash_color(pcg_hash(instance_seed ^ RT_HIT_PRIMITIVE_ID(geom)));
 	} else if (p_vis_mode == RT_VIS_CLUSTERS) {
 		return debug_hash_color(pcg_hash(instance_seed ^ cluster));
 	} else if (p_vis_mode == RT_VIS_CLUSTER_GROUPS) {

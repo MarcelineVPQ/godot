@@ -154,8 +154,7 @@ void RTValidation::check_view(const RTValidationView &p_view, LocalVector<String
 			const uint64_t records = geometry.instance_data_primitive_divisor ? geometry.primitive_count / geometry.instance_data_primitive_divisor : 1;
 			check_address(geometry.instance_data_address, records * stride_bytes, sources.instance_data, "geometries", i, "instance_data_address");
 		}
-		// The cluster count isn't recorded here, so only the first cluster's data is checked.
-		check_address(geometry.cluster_address, sizeof(RTClusterData), sources.clusters, "geometries", i, "cluster_address");
+		check_address(geometry.cluster_address, uint64_t(sources.cluster_count) * sizeof(RTClusterData), sources.clusters, "geometries", i, "cluster_address");
 	}
 
 	for (const String &issue : pending) {

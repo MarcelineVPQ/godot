@@ -8,7 +8,10 @@
 
 // Per-geometry entry (geometries, materials, motion) of a hit. A TLAS instance's custom index is its
 // first entry; multi-geometry BLASes store one entry per geometry, in geometry order. BLASes built from
-// clusters have one entry and report the cluster as the geometry index, see rt_geometry_idx().
+// clusters have one entry and report the cluster as the geometry index; their instances set
+// RT_INSTANCE_CLUSTERS_BIT in the custom index, see rt_geometry_idx().
+// Must match RT_INSTANCE_CLUSTERS_BIT in render_raytracing.h.
+#define RT_INSTANCE_CLUSTERS_BIT (1u << 23)
 #define RT_HIT_GEOMETRY_IDX rt_geometry_idx(uint(gl_InstanceCustomIndexEXT), uint(gl_GeometryIndexEXT))
 #define RT_RQ_GEOMETRY_IDX(m_rq, m_committed) rt_geometry_idx(uint(rayQueryGetIntersectionInstanceCustomIndexEXT(m_rq, m_committed)), uint(rayQueryGetIntersectionGeometryIndexEXT(m_rq, m_committed)))
 // Triangle of a hit in its geometry entry's index buffer; see rt_primitive_id().

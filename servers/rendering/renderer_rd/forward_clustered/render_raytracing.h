@@ -534,6 +534,11 @@ enum {
 	RT_GEOM_FLAG_CLUSTERS = 256u,
 };
 
+// Set in the TLAS custom index of instances of BLASes built from clusters, so shaders map their hits to the geometry
+// entry without reading it. Custom indices are 24 bits, so geometry entries stay below this bit.
+// Must match RT_INSTANCE_CLUSTERS_BIT in raytracing_inc.glsl.
+static constexpr uint32_t RT_INSTANCE_CLUSTERS_BIT = 1u << 23;
+
 // Facing state of the path traced triangles of one TLAS instance.
 struct RTTriangleFacing {
 	uint32_t instance_flags = 0; // TLAS TRIANGLE_FACING_CULL_DISABLE and TRIANGLE_FLIP_FACING bits.
@@ -642,6 +647,7 @@ struct RTGeometrySources {
 	RID prev_vertex;
 	RID instance_data;
 	RID clusters;
+	uint32_t cluster_count = 0; // RTClusterData records behind clusters.
 };
 
 // Buffers of a surface traced from clusters, owned by its RTSurfaceData. RD frees the BLAS with them.
@@ -1501,7 +1507,8 @@ class RenderRaytracing {
 	LocalVector<RD::AccelerationStructureInstance> tlas_instance_scratch;
 	LocalVector<RD::AccelerationStructureInstance> tlas_transparent_instance_scratch;
 	// Creates r_tlas, or recreates it when p_instances outgrew it, and converts p_instances into r_instances.
-	void _prepare_tlas(RID &r_tlas, uint32_t &r_max_instances, const RTInstanceArrays &p_instances, const String &p_name, LocalVector<RD::AccelerationStructureInstance> &r_instances);
+	// p_geometries is the table the custom indices point into, or null when they aren't geometry entries (decals).
+	void _prepare_tlas(RID &r_tlas, uint32_t &r_max_instances, const RTInstanceArrays &p_instances, const LocalVector<RT_GeometryData> *p_geometries, const String &p_name, LocalVector<RD::AccelerationStructureInstance> &r_instances);
 	// Prepares and builds r_tlas on its own, tracked by RD.
 	Error _build_one_tlas(RID &r_tlas, uint32_t &r_max_instances, const RTInstanceArrays &p_instances, const String &p_name);
 	// Builds the dirty BLASes and both TLASes in one batch, behind a full barrier. Nothing may read them before the
