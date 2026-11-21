@@ -76,3 +76,9 @@ transitions that image, so they cannot be fixed here; nothing visible goes wrong
   is still `VK_IMAGE_LAYOUT_UNDEFINED`.
 
 Everything else around Evaluate (the inputs, the output, the barriers) validates clean.
+
+## Untested on Metal
+
+The render-graph change that gives driver callbacks all pipeline stages (needed for the DLSS
+barriers) also reaches the MetalFX upscaler path on macOS. It has been checked on Linux/Vulkan only;
+MetalFX on a Mac has not been run with it yet.
