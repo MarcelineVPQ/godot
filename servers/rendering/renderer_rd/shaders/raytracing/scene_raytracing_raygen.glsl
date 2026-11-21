@@ -219,33 +219,36 @@ vec3 rt_medium_light(RTLightData p_light, vec3 p_pos, vec3 p_dir, float p_g, boo
 	return incoming * shadow * rt_medium_phase(dot(L, p_dir), p_g) * energy;
 }
 
+// Scatters in the medium a path may make past the bounce limit, see rt_medium_scatter().
+#define RT_MEDIUM_MAX_EXTRA_SCATTERS 16u
+
 // A real collision with p_medium at p_pos on the unit view ray p_dir, p_t along the traced ray: its emission and the
-// light of one light scatter towards the path, which then continues in a phase-sampled direction while it may bounce.
-// Like a diffuse bounce, it makes later light indirect.
+// light of one light scatter towards the path, which then continues in a phase-sampled direction. Like a diffuse
+// bounce, it makes later light indirect. Past the bounce limit the path still scatters in the medium, without counting,
+// while the path's Russian roulette lets it, for up to RT_MEDIUM_MAX_EXTRA_SCATTERS more scatters (main() stops it
+// there), so dense, bright fog keeps its multiple scattering; surfaces still end the path at the limit.
 void rt_medium_scatter(inout PathState r_ps, vec3 p_pos, vec3 p_dir, float p_t, RTFogWorldGridSample p_medium) {
-	RTFogWorldGridSample medium = p_medium;
 	float g = get_rt_param(RT_PARAM_FOG_WORLD_GRID_ANISOTROPY);
 	uint diffuse_bounces = get_diffuse_bounces(r_ps.packed_bounces_flags);
 
 	// Emission is a source per meter, so a collision scores it over the extinction.
-	r_ps.radiance += r_ps.throughput * medium.emission / max(medium.extinction, 1e-4);
+	r_ps.radiance += r_ps.throughput * p_medium.emission / max(p_medium.extinction, 1e-4);
 
 	uint light_index;
 	float select_pdf;
 	if (lights_select(p_pos, 0u, uint(get_rt_param(RT_PARAM_LIGHT_COUNT)), 0xFFFFFu, r_ps.rng_state, light_index, select_pdf)) {
 		vec3 light = rt_medium_light(lights_get(light_index), p_pos, p_dir, g, diffuse_bounces > 0u, r_ps.rng_state);
-		r_ps.radiance += r_ps.throughput * medium.albedo * light / max(select_pdf, 1e-10);
+		r_ps.radiance += r_ps.throughput * p_medium.albedo * light / max(select_pdf, 1e-10);
 	}
 
 	r_ps.hit_t = p_t;
-	if (get_total_bounces(r_ps.packed_bounces_flags) >= RT_GET_MAX_BOUNCES()) {
-		r_ps.packed_bounces_flags = set_path_terminated(r_ps.packed_bounces_flags);
-		return;
+	// Surfaces stop sampling diffuse bounces at MAX_DIFFUSE_BOUNCES; the medium keeps scattering.
+	uint bounced = r_ps.packed_bounces_flags;
+	if (get_total_bounces(bounced) < RT_GET_MAX_BOUNCES()) {
+		bounced = diffuse_bounces < MAX_DIFFUSE_BOUNCES ? inc_diffuse_bounce(bounced) : inc_total_bounce(bounced);
 	}
-	// Surfaces stop sampling diffuse bounces at MAX_DIFFUSE_BOUNCES; the medium keeps scattering up to the bounce limit.
-	uint bounced = diffuse_bounces < MAX_DIFFUSE_BOUNCES ? inc_diffuse_bounce(r_ps.packed_bounces_flags) : inc_total_bounce(r_ps.packed_bounces_flags);
 	r_ps.packed_bounces_flags = bounced | LAST_BOUNCE_DIFFUSE_FLAG | NON_SINGULAR_PATH_FLAG;
-	r_ps.throughput *= medium.albedo;
+	r_ps.throughput *= p_medium.albedo;
 	r_ps.next_ray_dir = rt_medium_sample_phase(p_dir, g, rand2(r_ps.rng_state));
 	r_ps.offset_normal = r_ps.next_ray_dir;
 }
@@ -351,7 +354,13 @@ void main() {
 		float replace_hit_t = 0.0;
 #endif
 
-		[[dont_unroll]] for (uint bounce = 0u; bounce <= max_bounces; bounce++) {
+		// Whether the last segment ended in the medium, which may go on past the bounce limit.
+		bool medium_scattered = false;
+		[[dont_unroll]] for (uint bounce = 0u; bounce <= max_bounces + RT_MEDIUM_MAX_EXTRA_SCATTERS; bounce++) {
+			if (bounce > max_bounces && !medium_scattered) {
+				break;
+			}
+			medium_scattered = false;
 			vec3 throughput_entry = ps.throughput;
 			vec3 radiance_pre = ps.radiance;
 			uint flags_entry = ps.packed_bounces_flags;
@@ -407,6 +416,7 @@ void main() {
 				ps.throughput = throughput_entry;
 				ps.packed_bounces_flags = flags_entry;
 				rt_medium_scatter(ps, ray_origin + ray_dir * medium_t, unit_dir, medium_t, medium);
+				medium_scattered = true;
 			}
 #ifdef DLSS_RR_ENABLED
 			if (bounce == 0u && (ps.packed_bounces_flags & DLSS_RR_REPLACE_PENDING_FLAG) != 0u) {
