@@ -69,6 +69,36 @@ layout(set = 0, binding = RT_LIGHT_BUFFER_BINDING, std430) readonly buffer Light
 
 layout(set = 0, binding = 40) uniform sampler rt_light_projector_sampler;
 
+// The light grid over the positional lights (C++ _build_light_grid() in render_raytracing.cpp has the layout): each cell
+// lists the lights whose range touches it.
+layout(set = 0, binding = 47, std430) readonly buffer LightGrid {
+	uint rt_light_grid[];
+};
+
+// The list of lights of the grid cell around p_pos: r_count light buffer indices from rt_light_grid[r_first]. False
+// outside the grid, where any positional light may reach.
+bool lights_grid_cell(vec3 p_pos, out uint r_first, out uint r_count) {
+	r_first = 0u;
+	r_count = 0u;
+	const uint cells = rt_light_grid[7];
+	if (cells == 0u) {
+		return false;
+	}
+	const vec3 origin = uintBitsToFloat(uvec3(rt_light_grid[0], rt_light_grid[1], rt_light_grid[2]));
+	const float cell_size = uintBitsToFloat(rt_light_grid[3]);
+	const uvec3 dims = uvec3(rt_light_grid[4], rt_light_grid[5], rt_light_grid[6]);
+	const vec3 cell = floor((p_pos - origin) / cell_size);
+	if (any(lessThan(cell, vec3(0.0))) || any(greaterThanEqual(cell, vec3(dims)))) {
+		return false;
+	}
+	const uvec3 c = uvec3(cell);
+	const uint index = (c.z * dims.y + c.y) * dims.x + c.x;
+	const uint begin = rt_light_grid[8u + index];
+	r_first = 8u + cells + 1u + begin;
+	r_count = rt_light_grid[8u + index + 1u] - begin;
+	return true;
+}
+
 uint lights_get_type(uint idx) {
 	return bitfieldExtract(rt_light_buffer[idx].masks, 20, 2);
 }
@@ -341,12 +371,21 @@ uint lights_directional_count(uint light_count) {
 	return count;
 }
 
-// Mini-batch reservoir selection over rt_light_buffer[first, first + count): draws k
-// candidates and keeps one valid light uniformly. Returns false if none is valid.
-bool lights_select(vec3 hit_pos, uint first, uint count, uint instance_layers, inout uint rng_state,
+// Mini-batch reservoir selection among the directional lights (p_directional) and the positional lights (p_positional)
+// of the first p_light_count of rt_light_buffer: draws k candidates and keeps one valid light uniformly. The positional
+// candidates are the lights of the light grid cell around hit_pos, which holds every light that can reach it; outside
+// the grid, all positional lights. Returns false if none is valid.
+bool lights_select(vec3 hit_pos, uint p_light_count, bool p_directional, bool p_positional, uint instance_layers, inout uint rng_state,
 		out uint r_idx, out float r_select_pdf) {
-	r_idx = first;
+	r_idx = 0u;
 	r_select_pdf = 1.0;
+	const uint directional_count = lights_directional_count(p_light_count);
+	const uint directional = p_directional ? directional_count : 0u;
+	uint grid_first;
+	uint grid_count;
+	const bool in_grid = p_positional && lights_grid_cell(hit_pos, grid_first, grid_count);
+	const uint positional = !p_positional ? 0u : (in_grid ? grid_count : p_light_count - directional_count);
+	const uint count = directional + positional;
 	if (count == 0u) {
 		return false;
 	}
@@ -355,7 +394,8 @@ bool lights_select(vec3 hit_pos, uint first, uint count, uint instance_layers, i
 	uint valid_found = 0u;
 
 	for (uint i = 0u; i < k; i++) {
-		uint idx = first + min(uint(rand(rng_state) * float(count)), count - 1u);
+		const uint j = min(uint(rand(rng_state) * float(count)), count - 1u);
+		const uint idx = j < directional ? j : (in_grid ? rt_light_grid[grid_first + j - directional] : directional_count + j - directional);
 		RTLightData test_light = lights_get(idx);
 
 		// light_cull_mask: the light only affects intersecting layers.
@@ -384,7 +424,8 @@ bool lights_select(vec3 hit_pos, uint first, uint count, uint instance_layers, i
 	// Estimate valid count from sample ratio, PDF = 1/validCount. This is resampled importance sampling with the
 	// candidates' validity as its target, and 1 / r_select_pdf = count * valid_found / k is exactly its weight: the
 	// estimate stays unbiased however unevenly lights are culled, since a culled light (other layers, out of range) adds
-	// nothing at hit_pos. The medium's next event estimation uses it the same way.
+	// nothing at hit_pos, nor does a light the grid cell leaves out. The medium's next event estimation uses it the same
+	// way.
 	float valid_count_estimate = float(count) * (float(valid_found) / float(k));
 	r_select_pdf = 1.0 / max(valid_count_estimate, 1.0);
 	return true;
@@ -511,7 +552,7 @@ vec3 lights_evaluate_direct_lighting(
 		uint p_receiver_shadow_mask) {
 	uint idx;
 	float select_pdf;
-	if (!lights_select(hit_pos, 0u, light_count, instance_layers, rng_state, idx, select_pdf)) {
+	if (!lights_select(hit_pos, light_count, true, true, instance_layers, rng_state, idx, select_pdf)) {
 		return vec3(0.0);
 	}
 
@@ -540,16 +581,15 @@ vec3 lights_evaluate_direct_lighting_per_group(
 		uint instance_layers,
 		uint p_receiver_shadow_mask) {
 	vec3 result = vec3(0.0);
-	uint directional_count = lights_directional_count(light_count);
 
 	uint idx;
 	float select_pdf;
-	if (lights_select(hit_pos, 0u, directional_count, instance_layers, rng_state, idx, select_pdf)) {
+	if (lights_select(hit_pos, light_count, true, false, instance_layers, rng_state, idx, select_pdf)) {
 		vec3 contribution = lights_evaluate_directional(lights_get(idx), hit_pos, N, V, material,
 				rng_state, is_indirect_bounce, p_receiver_shadow_mask);
 		result += contribution / max(select_pdf, 1e-10);
 	}
-	if (lights_select(hit_pos, directional_count, light_count - directional_count, instance_layers, rng_state, idx, select_pdf)) {
+	if (lights_select(hit_pos, light_count, false, true, instance_layers, rng_state, idx, select_pdf)) {
 		vec3 contribution = lights_evaluate_positional(lights_get(idx), hit_pos, N, V, material,
 				rng_state, is_indirect_bounce, p_receiver_shadow_mask);
 		result += contribution / max(select_pdf, 1e-10);

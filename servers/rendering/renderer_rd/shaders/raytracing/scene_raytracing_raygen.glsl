@@ -238,7 +238,7 @@ void rt_medium_scatter(inout PathState r_ps, vec3 p_pos, vec3 p_dir, float p_t, 
 
 	uint light_index;
 	float select_pdf;
-	if (lights_select(p_pos, 0u, uint(get_rt_param(RT_PARAM_LIGHT_COUNT)), 0xFFFFFu, r_ps.rng_state, light_index, select_pdf)) {
+	if (lights_select(p_pos, uint(get_rt_param(RT_PARAM_LIGHT_COUNT)), true, true, 0xFFFFFu, r_ps.rng_state, light_index, select_pdf)) {
 		vec3 light = rt_medium_light(lights_get(light_index), p_pos, p_dir, g, diffuse_bounces > 0u, r_ps.rng_state);
 		r_ps.radiance += r_ps.throughput * p_medium.albedo * light / max(select_pdf, 1e-10);
 	}

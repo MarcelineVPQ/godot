@@ -423,7 +423,9 @@ inline uint16_t rt_snorm16(float p_value) {
 }
 
 enum {
-	RT_LIGHTS_MAX = 64,
+	// Positional lights past this many, the lowest scored for the camera, are left out. Shading draws its candidates
+	// from the light grid cell around each hit (see _build_light_grid()), so the count costs memory, not noise.
+	RT_LIGHTS_MAX = 4096,
 	RT_LIGHTS_FRUSTUM_BUDGET = 48,
 	RT_LIGHTS_INDIRECT_BUDGET = RT_LIGHTS_MAX - RT_LIGHTS_FRUSTUM_BUDGET,
 };
@@ -1131,6 +1133,9 @@ struct RTViewportState {
 	LocalVector<uint32_t> plan_lookup; // By instance rt_index: its record in last frame's arena, see rt_plan_lookup().
 
 	RID light_buffer;
+	uint32_t light_buffer_capacity = 0; // In lights.
+	RID light_grid_buffer; // The light grid, see _build_light_grid().
+	uint32_t light_grid_capacity = 0; // In words.
 	RID params_buffer;
 	RID scene_uniform_set;
 
