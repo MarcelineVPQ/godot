@@ -120,6 +120,7 @@ TEST_FORCE_LINK(test_shader_rd_variants)
 #include "servers/rendering/renderer_rd/shaders/forward_mobile/scene_forward_mobile.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/particles.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/particles_copy.glsl.gen.h"
+#include "servers/rendering/renderer_rd/shaders/raytracing/cluster_lod_select.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/multimesh_merge.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/raytracing/scene_raytracing_raygen.glsl.gen.h"
 #include "servers/rendering/renderer_rd/shaders/skeleton.glsl.gen.h"
@@ -562,6 +563,7 @@ static void check_raygen(const String &p_name, const String &p_extra_defines) {
 
 static void check_path_tracer() {
 	check<MultimeshMergeShaderRD>("multimesh_merge", { "\n", "\n#define MODE_INDEXED\n" });
+	check<ClusterLodSelectShaderRD>("cluster_lod_select", { "\n" });
 	check_raygen("scene_raytracing_raygen", String());
 	check_raygen("scene_raytracing_raygen (float fog emission)", "\n#define FOG_WORLD_GRID_FLOAT_EMISSION\n");
 }
