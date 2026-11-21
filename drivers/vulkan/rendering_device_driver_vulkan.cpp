@@ -6737,7 +6737,9 @@ RDD::AccelerationStructureID RenderingDeviceDriverVulkan::blas_create_from_clust
 	}
 
 	const uint64_t address_size = uint64_t(cluster_count) * sizeof(VkDeviceAddress);
-	build->address_buffer = buffer_create(address_size, BUFFER_USAGE_STORAGE_BIT | BUFFER_USAGE_DEVICE_ADDRESS_BIT | BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT, MEMORY_ALLOCATION_TYPE_GPU, UINT64_MAX);
+	// Destination address arrays (the cluster addresses here, the BLAS address in the inputs below) must be in
+	// acceleration structure storage, even when they are also build inputs.
+	build->address_buffer = buffer_create(address_size, BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT | BUFFER_USAGE_STORAGE_BIT | BUFFER_USAGE_DEVICE_ADDRESS_BIT | BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT, MEMORY_ALLOCATION_TYPE_GPU, UINT64_MAX);
 
 	// Inputs: the cluster infos, then the BLAS info and the BLAS address, each section 256-byte aligned.
 	constexpr uint64_t SECTION_ALIGNMENT = 256;
@@ -6745,7 +6747,7 @@ RDD::AccelerationStructureID RenderingDeviceDriverVulkan::blas_create_from_clust
 	const uint64_t bottom_level_info_offset = STEPIFY(infos_size, SECTION_ALIGNMENT);
 	const uint64_t bottom_level_address_offset = bottom_level_info_offset + SECTION_ALIGNMENT;
 	const uint64_t input_size = bottom_level_address_offset + sizeof(VkDeviceAddress);
-	build->input_buffer = buffer_create(input_size, BUFFER_USAGE_STORAGE_BIT | BUFFER_USAGE_DEVICE_ADDRESS_BIT | BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT, MEMORY_ALLOCATION_TYPE_CPU, UINT64_MAX);
+	build->input_buffer = buffer_create(input_size, BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT | BUFFER_USAGE_STORAGE_BIT | BUFFER_USAGE_DEVICE_ADDRESS_BIT | BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT, MEMORY_ALLOCATION_TYPE_CPU, UINT64_MAX);
 	uint8_t *inputs = build->input_buffer ? buffer_map(build->input_buffer) : nullptr;
 	if (!build->address_buffer || !inputs) {
 		for (BufferID buffer : { storage, build->address_buffer, build->input_buffer }) {
