@@ -59,6 +59,7 @@ class ImporterMesh : public Resource {
 			float distance = 0.0f;
 		};
 		Vector<LOD> lods;
+		Vector<uint8_t> cluster_data; // See mesh_cluster_data.h.
 		Ref<Material> material;
 		String name;
 		uint64_t flags = 0;
@@ -118,6 +119,7 @@ public:
 	void optimize_indices();
 
 	void generate_lods(float p_normal_merge_angle, Array p_skin_pose_transform_array);
+	void generate_clusters();
 
 	void create_shadow_mesh();
 	Ref<ImporterMesh> get_shadow_mesh() const;

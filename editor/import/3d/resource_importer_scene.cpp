@@ -2270,6 +2270,7 @@ void ResourceImporterScene::get_internal_import_options(InternalImportCategory p
 			r_options->push_back(ImportOption(PropertyInfo(Variant::INT, "generate/lightmap_uv", PROPERTY_HINT_ENUM, "Default,Enable,Disable"), 0));
 			r_options->push_back(ImportOption(PropertyInfo(Variant::INT, "generate/lods", PROPERTY_HINT_ENUM, "Default,Enable,Disable"), 0));
 			r_options->push_back(ImportOption(PropertyInfo(Variant::FLOAT, "lods/normal_merge_angle", PROPERTY_HINT_RANGE, "0,180,1,degrees"), 20.0f));
+			r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "generate/clusters"), false));
 		} break;
 		case INTERNAL_IMPORT_CATEGORY_MATERIAL: {
 			r_options->push_back(ImportOption(PropertyInfo(Variant::BOOL, "use_external/enabled", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_UPDATE_ALL_IF_MODIFIED), false));
@@ -2712,6 +2713,7 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 				//do mesh processing
 
 				bool generate_lods = p_generate_lods;
+				bool generate_clusters = false;
 				float merge_angle = 20.0f;
 				bool create_shadow_meshes = p_create_shadow_meshes;
 				bool bake_lightmaps = p_light_bake_mode == LIGHT_BAKE_STATIC_LIGHTMAPS;
@@ -2762,6 +2764,8 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 					if (mesh_settings.has("lods/normal_merge_angle")) {
 						merge_angle = mesh_settings["lods/normal_merge_angle"];
 					}
+
+					generate_clusters = mesh_settings.get("generate/clusters", false);
 
 					if (bool(mesh_settings.get("save_to_file/enabled", false))) {
 						save_to_file = mesh_settings.get("save_to_file/path", String());
@@ -2817,6 +2821,11 @@ Node *ResourceImporterScene::_generate_meshes(Node *p_node, const Dictionary &p_
 				}
 
 				importer_mesh->optimize_indices();
+
+				// Last: the clusters index the final vertex arrays.
+				if (generate_clusters) {
+					importer_mesh->generate_clusters();
+				}
 
 				if (!save_to_file.is_empty()) {
 					String save_res_path = ResourceUID::ensure_path(save_to_file);

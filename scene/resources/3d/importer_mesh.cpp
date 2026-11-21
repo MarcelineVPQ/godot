@@ -34,6 +34,7 @@
 #include "core/math/random_pcg.h"
 #include "core/object/class_db.h"
 #include "scene/resources/surface_tool.h"
+#include "servers/rendering/rendering_server.h"
 
 #ifndef PHYSICS_3D_DISABLED
 #include "core/math/convex_hull.h"
@@ -498,6 +499,8 @@ void ImporterMesh::optimize_indices() {
 		if (surfaces[i].primitive != Mesh::PRIMITIVE_TRIANGLES) {
 			continue;
 		}
+		// Clusters index the vertices this reorders.
+		surfaces.write[i].cluster_data.clear();
 
 		Vector<Vector3> vertices = surfaces[i].arrays[RSE::ARRAY_VERTEX];
 		PackedInt32Array indices = surfaces[i].arrays[RSE::ARRAY_INDEX];
@@ -587,6 +590,8 @@ void ImporterMesh::generate_lods(float p_normal_merge_angle, Array p_bone_transf
 		}
 
 		surfaces.write[i].lods.clear();
+		// Clusters index the vertices this may split.
+		surfaces.write[i].cluster_data.clear();
 		Vector<Vector3> vertices = surfaces[i].arrays[RSE::ARRAY_VERTEX];
 		PackedInt32Array indices = surfaces[i].arrays[RSE::ARRAY_INDEX];
 		Vector<Vector3> normals = surfaces[i].arrays[RSE::ARRAY_NORMAL];
@@ -888,7 +893,14 @@ Ref<ArrayMesh> ImporterMesh::get_mesh(const Ref<ArrayMesh> &p_base) {
 				}
 			}
 
-			mesh->add_surface_from_arrays(surfaces[i].primitive, surfaces[i].arrays, bs_data, lods, surfaces[i].flags);
+			if (surfaces[i].cluster_data.is_empty()) {
+				mesh->add_surface_from_arrays(surfaces[i].primitive, surfaces[i].arrays, bs_data, lods, surfaces[i].flags);
+			} else {
+				RenderingServerTypes::SurfaceData sd;
+				Error err = RS::get_singleton()->mesh_create_surface_data_from_arrays(&sd, RSE::PrimitiveType(surfaces[i].primitive), surfaces[i].arrays, bs_data, lods, surfaces[i].flags);
+				ERR_FAIL_COND_V(err != OK, Ref<ArrayMesh>());
+				mesh->add_surface(sd.format, surfaces[i].primitive, sd.vertex_data, sd.attribute_data, sd.skin_data, sd.vertex_count, sd.index_data, sd.index_count, sd.aabb, sd.blend_shape_data, sd.bone_aabbs, sd.lods, sd.uv_scale, surfaces[i].cluster_data);
+			}
 			if (surfaces[i].material.is_valid()) {
 				mesh->surface_set_material(mesh->get_surface_count() - 1, surfaces[i].material);
 			}
@@ -950,6 +962,54 @@ void ImporterMesh::clear() {
 	surfaces.clear();
 	blend_shapes.clear();
 	mesh.unref();
+}
+
+void ImporterMesh::generate_clusters() {
+	ERR_FAIL_NULL_MSG(SurfaceTool::build_clusters_func, "Generating clusters requires the meshoptimizer module.");
+
+	for (int i = 0; i < surfaces.size(); i++) {
+		Surface &surface = surfaces.write[i];
+		surface.cluster_data.clear();
+		if (surface.primitive != Mesh::PRIMITIVE_TRIANGLES) {
+			continue;
+		}
+		const Vector<Vector3> vertices = surface.arrays[RSE::ARRAY_VERTEX];
+		const PackedInt32Array indices = surface.arrays[RSE::ARRAY_INDEX];
+		const Vector<Vector3> normals = surface.arrays[RSE::ARRAY_NORMAL];
+		const Vector<Vector2> uvs = surface.arrays[RSE::ARRAY_TEX_UV];
+		const uint32_t vertex_count = vertices.size();
+		const uint32_t index_count = indices.is_empty() ? vertex_count : indices.size();
+		if (index_count < 3) {
+			continue;
+		}
+
+		LocalVector<float> positions;
+		LocalVector<float> attributes;
+		positions.resize(vertex_count * 3);
+		attributes.resize_initialized(vertex_count * SurfaceTool::CLUSTER_ATTRIBUTE_COUNT);
+		for (uint32_t v = 0; v < vertex_count; v++) {
+			float *attribute = &attributes[v * SurfaceTool::CLUSTER_ATTRIBUTE_COUNT];
+			for (int axis = 0; axis < 3; axis++) {
+				positions[v * 3 + axis] = vertices[v][axis];
+				if (uint32_t(normals.size()) == vertex_count) {
+					attribute[axis] = normals[v][axis];
+				}
+			}
+			if (uint32_t(uvs.size()) == vertex_count) {
+				attribute[3] = uvs[v].x;
+				attribute[4] = uvs[v].y;
+			}
+		}
+
+		LocalVector<uint32_t> triangle_indices;
+		triangle_indices.resize(index_count);
+		for (uint32_t j = 0; j < index_count; j++) {
+			triangle_indices[j] = indices.is_empty() ? j : uint32_t(indices[j]);
+			ERR_FAIL_COND_MSG(triangle_indices[j] >= vertex_count, "Can't generate clusters: the surface has an index past its last vertex.");
+		}
+
+		surface.cluster_data = SurfaceTool::build_clusters_func(positions.ptr(), attributes.ptr(), vertex_count, triangle_indices.ptr(), index_count - index_count % 3);
+	}
 }
 
 void ImporterMesh::create_shadow_mesh() {
@@ -1084,6 +1144,9 @@ void ImporterMesh::_set_data(const Dictionary &p_data) {
 				flags = s["flags"];
 			}
 			add_surface(prim, arr, b_shapes, lods, material, surf_name, flags);
+			if (s.has("cluster_data")) {
+				surfaces.write[surfaces.size() - 1].cluster_data = s["cluster_data"];
+			}
 		}
 	}
 }
@@ -1110,6 +1173,10 @@ Dictionary ImporterMesh::_get_data() const {
 				lods[surfaces[i].lods[j].distance] = surfaces[i].lods[j].indices;
 			}
 			d["lods"] = lods;
+		}
+
+		if (surfaces[i].cluster_data.size()) {
+			d["cluster_data"] = surfaces[i].cluster_data;
 		}
 
 		if (surfaces[i].material.is_valid()) {
@@ -1571,6 +1638,7 @@ void ImporterMesh::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_surface_material", "surface_idx", "material"), &ImporterMesh::set_surface_material);
 
 	ClassDB::bind_method(D_METHOD("generate_lods", "normal_merge_angle", "normal_split_angle", "bone_transform_array"), &ImporterMesh::_generate_lods_bind);
+	ClassDB::bind_method(D_METHOD("generate_clusters"), &ImporterMesh::generate_clusters);
 	ClassDB::bind_method(D_METHOD("get_mesh", "base_mesh"), &ImporterMesh::get_mesh, DEFVAL(Ref<ArrayMesh>()));
 	ClassDB::bind_static_method("ImporterMesh", D_METHOD("from_mesh", "mesh"), &ImporterMesh::from_mesh);
 	ClassDB::bind_method(D_METHOD("clear"), &ImporterMesh::clear);

@@ -107,6 +107,9 @@ struct SurfaceData {
 
 	Vector4 uv_scale;
 
+	// Cluster LOD hierarchy for virtualised geometry, see mesh_cluster_data.h. Empty when not baked.
+	Vector<uint8_t> cluster_data;
+
 	RID material;
 };
 

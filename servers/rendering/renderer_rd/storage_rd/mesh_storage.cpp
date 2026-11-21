@@ -454,6 +454,7 @@ void MeshStorage::mesh_add_surface(RID p_mesh, const RenderingServerTypes::Surfa
 	s->mesh_to_skeleton_xform = p_surface.mesh_to_skeleton_xform;
 
 	s->uv_scale = new_surface.uv_scale;
+	s->cluster_data = new_surface.cluster_data;
 
 	if (mesh->blend_shape_count > 0) {
 		s->blend_shape_buffer = RD::get_singleton()->storage_buffer_create(new_surface.blend_shape_data.size(), new_surface.blend_shape_data);
@@ -722,6 +723,7 @@ RenderingServerTypes::SurfaceData MeshStorage::mesh_get_surface(RID p_mesh, int 
 	}
 	sd.aabb = s.aabb;
 	sd.uv_scale = s.uv_scale;
+	sd.cluster_data = s.cluster_data;
 	for (uint32_t i = 0; i < s.lod_count; i++) {
 		RenderingServerTypes::SurfaceData::LOD lod;
 		lod.edge_length = s.lods[i].edge_length;

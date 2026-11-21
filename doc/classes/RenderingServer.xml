@@ -2525,6 +2525,7 @@
 					],
 					"bone_aabbs": Array[AABB],
 					"blend_shape_data": PackedByteArray,
+					"cluster_data": PackedByteArray, # Cluster LOD hierarchy baked on import for path traced virtualised geometry.
 					"material": Material,
 				}
 				[/codeblock]

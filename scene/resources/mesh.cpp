@@ -1559,6 +1559,10 @@ Array ArrayMesh::_get_surfaces() const {
 			data["blend_shapes"] = surface.blend_shape_data;
 		}
 
+		if (surface.cluster_data.size()) {
+			data["cluster_data"] = surface.cluster_data;
+		}
+
 		if (surfaces[i].material.is_valid()) {
 			data["material"] = surfaces[i].material;
 		}
@@ -1642,6 +1646,10 @@ void ArrayMesh::_set_surfaces(const Array &p_surfaces) {
 
 		if (d.has("blend_shapes")) {
 			surface.blend_shape_data = d["blend_shapes"];
+		}
+
+		if (d.has("cluster_data")) {
+			surface.cluster_data = d["cluster_data"];
 		}
 
 		Ref<Material> material;
@@ -1782,7 +1790,7 @@ void ArrayMesh::_recompute_aabb() {
 }
 
 // TODO: Need to add binding to add_surface using future MeshSurfaceData object.
-void ArrayMesh::add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_primitive, const Vector<uint8_t> &p_array, const Vector<uint8_t> &p_attribute_array, const Vector<uint8_t> &p_skin_array, int p_vertex_count, const Vector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<uint8_t> &p_blend_shape_data, const Vector<AABB> &p_bone_aabbs, const Vector<RenderingServerTypes::SurfaceData::LOD> &p_lods, const Vector4 p_uv_scale) {
+void ArrayMesh::add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_primitive, const Vector<uint8_t> &p_array, const Vector<uint8_t> &p_attribute_array, const Vector<uint8_t> &p_skin_array, int p_vertex_count, const Vector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<uint8_t> &p_blend_shape_data, const Vector<AABB> &p_bone_aabbs, const Vector<RenderingServerTypes::SurfaceData::LOD> &p_lods, const Vector4 p_uv_scale, const Vector<uint8_t> &p_cluster_data) {
 	ERR_FAIL_COND(surfaces.size() == RSE::MAX_MESH_SURFACES);
 	_create_if_empty();
 
@@ -1811,6 +1819,7 @@ void ArrayMesh::add_surface(BitField<ArrayFormat> p_format, PrimitiveType p_prim
 	sd.bone_aabbs = p_bone_aabbs;
 	sd.lods = p_lods;
 	sd.uv_scale = p_uv_scale;
+	sd.cluster_data = p_cluster_data;
 
 	RenderingServer::get_singleton()->mesh_add_surface(mesh, sd);
 

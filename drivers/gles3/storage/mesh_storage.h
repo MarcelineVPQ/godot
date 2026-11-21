@@ -117,6 +117,9 @@ struct Mesh {
 
 		Vector4 uv_scale;
 
+		// See mesh_cluster_data.h. Unused by this renderer; kept so the mesh can be saved again.
+		Vector<uint8_t> cluster_data;
+
 		struct BlendShape {
 			GLuint vertex_buffer = 0;
 			GLuint vertex_array = 0;

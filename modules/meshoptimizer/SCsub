@@ -17,6 +17,7 @@ thirdparty_sources = [
     "indexanalyzer.cpp",
     "indexcodec.cpp",
     "indexgenerator.cpp",
+    "meshletutils.cpp",
     "overdrawoptimizer.cpp",
     "partition.cpp",
     "quantization.cpp",
@@ -34,13 +35,15 @@ thirdparty_sources = [thirdparty_dir + file for file in thirdparty_sources]
 env_thirdparty = env_meshoptimizer.Clone()
 env_thirdparty.disable_warnings()
 env_thirdparty.add_source_files(thirdparty_obj, thirdparty_sources)
+# The implementation of clusterlod.h, which is header-only upstream.
+env_thirdparty.add_source_files(thirdparty_obj, "clusterlod.cpp")
 env.modules_sources += thirdparty_obj
 
 # Godot source files
 
 module_obj = []
 
-env_meshoptimizer.add_source_files(module_obj, "*.cpp")
+env_meshoptimizer.add_source_files(module_obj, ["register_types.cpp", "cluster_lod_builder.cpp"])
 env.modules_sources += module_obj
 
 # Needed to force rebuilding the module files when the thirdparty library is updated.

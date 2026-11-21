@@ -136,6 +136,9 @@ private:
 
 			Vector4 uv_scale;
 
+			// See mesh_cluster_data.h. Kept on the CPU: the path tracer uploads what it traces.
+			Vector<uint8_t> cluster_data;
+
 			RID blend_shape_buffer;
 			uint32_t blend_shape_buffer_size = 0;
 
@@ -485,6 +488,11 @@ public:
 	_FORCE_INLINE_ Vector4 mesh_surface_get_uv_scale(void *p_surface) {
 		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
 		return s->uv_scale;
+	}
+
+	_FORCE_INLINE_ const Vector<uint8_t> &mesh_surface_get_cluster_data(void *p_surface) {
+		Mesh::Surface *s = reinterpret_cast<Mesh::Surface *>(p_surface);
+		return s->cluster_data;
 	}
 
 	// Get the vertex buffer RID for raytracing device address access.

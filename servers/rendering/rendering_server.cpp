@@ -1961,6 +1961,9 @@ static RenderingServerTypes::SurfaceData _dict_to_surf(const Dictionary &p_dicti
 	if (p_dictionary.has("uv_scale")) {
 		sd.uv_scale = p_dictionary["uv_scale"];
 	}
+	if (p_dictionary.has("cluster_data")) {
+		sd.cluster_data = p_dictionary["cluster_data"];
+	}
 
 	if (p_dictionary.has("lods")) {
 		Array lods = p_dictionary["lods"];
@@ -2023,6 +2026,9 @@ Dictionary RenderingServer::_mesh_get_surface(RID p_mesh, int p_idx) {
 	}
 	d["aabb"] = sd.aabb;
 	d["uv_scale"] = sd.uv_scale;
+	if (sd.cluster_data.size()) {
+		d["cluster_data"] = sd.cluster_data;
+	}
 
 	if (sd.lods.size()) {
 		Array lods;

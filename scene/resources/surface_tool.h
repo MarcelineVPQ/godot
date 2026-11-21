@@ -113,6 +113,11 @@ public:
 	static RemapVertexFunc remap_vertex_func;
 	typedef void (*RemapIndexFunc)(unsigned int *destination, const unsigned int *indices, size_t index_count, const unsigned int *remap);
 	static RemapIndexFunc remap_index_func;
+	// Bakes the cluster LOD hierarchy of a triangle list into the format of mesh_cluster_data.h. p_attributes holds
+	// CLUSTER_ATTRIBUTE_COUNT floats per vertex: the normal (x, y, z), then the UV (u, v).
+	static constexpr uint32_t CLUSTER_ATTRIBUTE_COUNT = 5;
+	typedef Vector<uint8_t> (*BuildClustersFunc)(const float *p_positions, const float *p_attributes, size_t p_vertex_count, const unsigned int *p_indices, size_t p_index_count);
+	static BuildClustersFunc build_clusters_func;
 	static void strip_mesh_arrays(PackedVector3Array &r_vertices, PackedInt32Array &r_indices);
 
 private:
