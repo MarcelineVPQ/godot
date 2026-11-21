@@ -246,6 +246,10 @@ TEST_CASE("[SceneTree][MeshClusterData] Every distance-dependent cut covers the 
 	// coarsest, as the GPU selection picks them per instance.
 	RandomPCG rng(54321);
 	int levels_seen = 0;
+	// What the renderer sizes each instance's BLAS for; no cut may exceed it.
+	const uint32_t max_cut = view.get_max_cut_cluster_count();
+	CHECK(max_cut >= view.get_header().finest_cluster_count);
+	CHECK(max_cut <= view.get_header().cluster_count);
 	for (int i = 0; i < 40; i++) {
 		const Vector3 camera(rng.random(-1.0f, 2.0f), rng.random(-1.0f, 2.0f), rng.random(0.05f, 3.0f));
 		const float min_scale = rng.random(0.25f, 1.0f);
@@ -262,6 +266,7 @@ TEST_CASE("[SceneTree][MeshClusterData] Every distance-dependent cut covers the 
 				levels_seen |= 1 << MIN(cluster.level, 30u);
 			}
 		}
+		CHECK_MESSAGE(cut.size() <= max_cut, vformat("A cut of %d clusters exceeds the bound of %d.", cut.size(), max_cut));
 
 		int wrong = 0;
 		for (int j = 0; j < 100; j++) {

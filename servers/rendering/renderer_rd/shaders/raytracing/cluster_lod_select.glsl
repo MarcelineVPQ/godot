@@ -83,7 +83,8 @@ layout(set = 0, binding = 0, std430) restrict readonly buffer Jobs {
 }
 jobs;
 
-// Per stats slot: clusters and triangles of the last cut.
+// Per stats slot: clusters and triangles of the last cut. The cluster count is the cut's own, even past the reference
+// capacity, so the renderer can report an overflow.
 layout(set = 0, binding = 1, std430) restrict writeonly buffer Stats {
 	uvec2 v[];
 }

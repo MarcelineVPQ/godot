@@ -173,6 +173,7 @@ RID RTClusterLodSelector::instance_blas(View &r_view, const Key &p_key, const RT
 		rd->set_resource_name(created.blas, "RT cluster LOD BLAS");
 		created.cluster_set = p_surface.cluster_set;
 		created.finest_triangle_count = p_surface.finest_triangle_count;
+		created.max_cut_cluster_count = p_surface.max_cut_cluster_count;
 		if (r_view.free_stats_slots.is_empty()) {
 			created.stats_slot = r_view.stats_slot_count++;
 		} else {
@@ -380,8 +381,14 @@ void RTClusterLodSelector::_record_render_info(View &r_view, int *r_render_info)
 		instances++;
 		finest_triangles += instance.finest_triangle_count;
 		if (instance.stats_slot < slot_count) {
-			clusters += slots[instance.stats_slot * 2];
+			const uint32_t cut_clusters = slots[instance.stats_slot * 2];
+			clusters += cut_clusters;
 			triangles += slots[instance.stats_slot * 2 + 1];
+			if (cut_clusters > instance.max_cut_cluster_count) {
+				// The selection dropped the clusters past the capacity, so the instance has holes. The bound holds for every
+				// cut of a monotonic DAG, which meshes baked before group spheres held their clusters' may not be.
+				WARN_PRINT_ONCE("Path tracing: A mesh traced with cluster level of detail picked more clusters than its bound, so parts of it are missing. Reimport the mesh to bake its clusters again.");
+			}
 		}
 	}
 	const auto add = [r_render_info](RSE::ViewportRenderInfo p_info, uint64_t p_value) {

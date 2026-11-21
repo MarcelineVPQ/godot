@@ -112,6 +112,7 @@ public:
 			RID references; // RD::AccelerationStructureClusterReferences, then the references.
 			RID cluster_set; // The surface's, to notice a surface baked again.
 			uint32_t finest_triangle_count = 0;
+			uint32_t max_cut_cluster_count = 0; // What its BLAS and references hold.
 			uint32_t stats_slot = 0;
 			uint32_t last_used_frame = 0;
 			bool selected = false; // False until its first cut.

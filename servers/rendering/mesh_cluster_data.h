@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/math/math_funcs.h"
+#include "core/templates/local_vector.h"
 #include "core/templates/span.h"
 #include "core/templates/vector.h"
 
@@ -196,6 +197,25 @@ public:
 	Span<uint8_t> get_triangles() const { return Span<uint8_t>(triangles, uint64_t(header->triangle_count) * 3); }
 	Span<uint32_t> get_vertices() const { return Span<uint32_t>(vertices, header->vertex_count); }
 	Span<float> get_positions() const { return Span<float>(positions, uint64_t(header->vertex_count) * 3); }
+
+	// The most clusters a cut can have. Coarsening a group swaps its clusters for those simplified from it, and every cut
+	// is the finest level with some groups coarsened, so a cut has the finest level's clusters plus at most what each
+	// group adds where simplification gave it more clusters than it had (rarely).
+	uint32_t get_max_cut_cluster_count() const {
+		LocalVector<int32_t> growth;
+		growth.resize_initialized(header->group_count);
+		for (const Cluster &cluster : get_clusters()) {
+			growth[cluster.group]--;
+			if (cluster.refined >= 0) {
+				growth[cluster.refined]++;
+			}
+		}
+		uint32_t count = header->finest_cluster_count;
+		for (int32_t added : growth) {
+			count += MAX(added, 0);
+		}
+		return count;
+	}
 };
 
 } // namespace MeshClusterData
