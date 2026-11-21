@@ -10,8 +10,8 @@ This fork of Godot 4.8-dev builds on NVIDIA's real-time path tracing branch
 | Volumetric path tracing | Light scatters in fog for real: delta tracking against brick majorants, light sampling with shadow transmittance, multiple scattering, per-channel emission summed as floats on the GPU (float atomics, with a fixed-point fallback); fog shows in reflections and bounces, smoke casts shadows; guides for DLSS RR | pt-volumetrics |
 | Cluster geometry (virtualised geometry, phase 1) | Meshes baked into cluster LOD hierarchies on import (meshoptimizer clusterlod) and traced through VK_NV_cluster_acceleration_structure (RTX Mega Geometry); Triangles, Clusters, Groups, LOD and Error debug views | virtual-geometry |
 | Cluster LOD selection | Each frame a compute pass picks every instance's cluster cut from the camera position, with a bounded screen error and hysteresis; rebuilds are budgeted per frame; the debug views show real levels and errors; stats in the render info | cluster-lod |
-| Shader variant check | An offline test compiles every ShaderRD variant (641 at present) and catches interface clashes, plus a script and a pre-commit hook so coverage can't drift | cluster-lod |
-| Validation-clean | Runs clean under Khronos validation with synchronization checks; the only messages left are inside NVIDIA's NGX library, documented in drivers/ngx/README.md. Includes an inherited Forward+ multiview depth fix | cluster-lod |
+| Shader variant check | An offline test compiles every ShaderRD variant (641 at present) and catches interface clashes; a script, run by a pre-commit hook and CI, flags shader classes and defines the test doesn't reach | virtual-geometry |
+| Validation-clean | Runs under Khronos validation with synchronization checks; three messages remain: two inside NVIDIA's NGX library (documented in drivers/ngx/README.md) and VUID-VkGraphicsPipelineCreateInfo-pLibraryInfo-07999, inherited from upstream Godot. Includes an inherited Forward+ multiview depth fix | virtual-geometry |
 
 **Ray-traced audio (companion).** Paired with our fork of
 [Nexus Resonance](https://github.com/MarcelineVPQ/godot-nexus-resonance), a Steam Audio
@@ -20,11 +20,13 @@ transmission through walls and doors, real reverb from room geometry, sound that
 the listener, with in-engine debug overlays. It loads as a plugin; nothing to merge.
 
 Everything is off or falls back cleanly when the hardware or driver lacks it,
-and raster rendering is unchanged. The branches stack in order; the newest
+and raster rendering is unchanged apart from two bug fixes (Forward+ multiview depth, and a
+render-graph barrier for driver callbacks). The branches stack in order; the newest
 (cluster-lod) has everything.
 
-Measured on an RTX 5080: 10,000 cluster-LOD instances at 60 fps with no hitches; about
-100 KB of video memory per instance for a 50k-triangle mesh.
+Measured on an RTX 5080 (one 71-second walk by hand, 3200x1728 output, DLSS RR, vsync at
+60): 10,000 cluster-LOD instances at 60.0 fps average, 99.5 % of frames on target, no hitches,
+5.81 ms GPU per frame; up to about 100 KB of video memory per instance of a 50k-triangle mesh.
 
 Status: in active development. Tested on Linux with an RTX 50-series GPU.
 Contributions from here are offered upstream where they fit.
