@@ -47,5 +47,17 @@ elif env["library_type"] == "shared_library":
 else:
     prog = env.add_program("#bin/godot", common_linuxbsd)
 
+if env["use_ngx"]:
+
+    def write_ngx_marker(target, source, env):
+        with open(str(target[0]), "w", encoding="utf-8", newline="\n") as f:
+            f.write("Built with use_ngx=yes: NVIDIA's DLSS libraries must sit next to this binary.\n")
+
+    # NGX loads the DLSS libraries at runtime from the executable's folder, and their licence goes with them. The
+    # marker tells the Linux export that a template next to it needs them.
+    env.Install("#bin", env.ngx_libraries)
+    env.InstallAs("#bin/NVIDIA_RTX_SDK_LICENSE.txt", env.ngx_license)
+    env.Command(prog[0].abspath + ".ngx", [], env.Run(write_ngx_marker))
+
 if env["debug_symbols"] and env["separate_debug_symbols"]:
     env.AddPostAction(prog, env.Run(platform_linuxbsd_builders.make_debug_linuxbsd))

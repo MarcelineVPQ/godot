@@ -62,12 +62,13 @@ Error EditorExportPlatformLinuxBSD::_export_debug_script(const Ref<EditorExportP
 }
 
 // Templates built with use_ngx=yes load NVIDIA's DLSS libraries from the executable's folder, so the libraries next to
-// the template go next to the game, with the NVIDIA licence and notice they must ship with.
+// the template go next to the game, with the NVIDIA licence and notice they must ship with. The build writes a marker
+// file named after the template (<template>.ngx), so a template built without NGX in the same folder exports none.
 void EditorExportPlatformLinuxBSD::_export_ngx_libraries(const String &p_template_path, const String &p_dest_dir) {
-	const String template_dir = p_template_path.get_base_dir();
-	if (template_dir.is_empty()) {
+	if (p_template_path.is_empty() || !FileAccess::exists(p_template_path + ".ngx")) {
 		return;
 	}
+	const String template_dir = p_template_path.get_base_dir();
 	Ref<DirAccess> template_da = DirAccess::open(template_dir);
 	if (template_da.is_null()) {
 		return;
@@ -80,6 +81,7 @@ void EditorExportPlatformLinuxBSD::_export_ngx_libraries(const String &p_templat
 		}
 	}
 	if (!copied) {
+		add_message(EXPORT_MESSAGE_WARNING, TTR("DLSS"), TTR("The export template was built with DLSS, but NVIDIA's DLSS libraries (libnvidia-ngx-dlss*.so) aren't next to it, so the game will run without DLSS. Copy them from the engine build's \"bin\" folder."));
 		return;
 	}
 	const String license_file = "NVIDIA_RTX_SDK_LICENSE.txt";

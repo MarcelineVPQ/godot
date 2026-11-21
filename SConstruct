@@ -686,17 +686,9 @@ if env["use_ngx"]:
                 print_error(f"use_ngx=yes and fetch_ngx=no, but '{ngx_dir}/{ngx_missing[0]}' is missing.")
                 Exit(255)
 
-        # NGX loads the DLSS libraries at runtime from the executable's folder.
-        import shutil
-
-        # Their licence goes with them; the Linux export copies them all next to the game.
-        os.makedirs("bin", exist_ok=True)
-        for ngx_library in ngx_libraries:
-            if not os.path.isfile(os.path.join("bin", ngx_library)):
-                shutil.copy2(os.path.join(ngx_dir, "lib/Linux_x86_64/rel", ngx_library), "bin")
-        if not os.path.isfile(os.path.join("bin", "NVIDIA_RTX_SDK_LICENSE.txt")):
-            shutil.copy2(os.path.join(ngx_dir, "LICENSE.txt"), os.path.join("bin", "NVIDIA_RTX_SDK_LICENSE.txt"))
-
+    # platform/linuxbsd/SCsub installs them next to the binary.
+    env.ngx_libraries = [f"#{ngx_dir}/lib/Linux_x86_64/rel/{ngx_library}" for ngx_library in ngx_libraries]
+    env.ngx_license = f"#{ngx_dir}/LICENSE.txt"
     env.AppendUnique(CPPDEFINES=["NGX_ENABLED"])
 
 # Library Support

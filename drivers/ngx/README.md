@@ -13,14 +13,16 @@ upscales the path tracer's. Windows builds are unchanged.
   `thirdparty/ngx/`, which git ignores, and checks each file's SHA-256. If the download fails,
   the build stops and says so. `scons -c` and `--help` never download. For offline builds, put
   the files in `thirdparty/ngx/` yourself and add `fetch_ngx=no`.
-- The build links `libnvsdk_ngx.a` and copies `libnvidia-ngx-dlss.so.310.9.16` (Super
+- The build links `libnvsdk_ngx.a` and installs `libnvidia-ngx-dlss.so.310.9.16` (Super
   Resolution), `libnvidia-ngx-dlssd.so.310.9.16` (Ray Reconstruction) and NVIDIA's licence, as
-  `NVIDIA_RTX_SDK_LICENSE.txt`, into `bin/`. At runtime NGX loads the libraries from the folder
-  of the Godot executable.
-- Exporting for Linux copies every `libnvidia-ngx-dlss*.so*` found next to the export template,
-  with `NVIDIA_RTX_SDK_LICENSE.txt`, next to the game, and writes `NVIDIA_NOTICE.txt`. So keep
-  those files next to export templates built with NGX; without the library, exported games run
-  without DLSS and say why.
+  `NVIDIA_RTX_SDK_LICENSE.txt`, into `bin/` as build targets (`scons -c` removes them, and an
+  SDK bump replaces them). It also writes a marker `<binary>.ngx` next to each binary built with
+  NGX. At runtime NGX loads the libraries from the folder of the Godot executable.
+- Exporting for Linux with a template that has its marker (`<template>.ngx`) copies every
+  `libnvidia-ngx-dlss*.so*` found next to the template, with `NVIDIA_RTX_SDK_LICENSE.txt`, next
+  to the game, and writes `NVIDIA_NOTICE.txt`. A template without the marker exports none of
+  them. So keep those files, and the marker renamed after the template, next to export templates
+  built with NGX; if the libraries are missing, the export warns and the game runs without DLSS.
 - `ngx_context.cpp` adds the Vulkan extensions NGX asks for, starts NGX on NVIDIA GPUs and checks
   that each feature is available. If one is not (another GPU vendor, an old driver, or its
   library missing), it stays off and a warning says why: without Ray Reconstruction the path
