@@ -410,6 +410,48 @@ vec3 debug_dynamic_geometry(uint p_state, vec3 p_albedo, float p_NdotV) {
 	return debug_dynamic_geometry_tint(p_state, 0u, rest, recency);
 }
 
+// Distinct color for hash p_hash, never close to black.
+vec3 debug_hash_color(uint p_hash) {
+	return vec3(0.15) + 0.85 * vec3(uvec3(p_hash, p_hash >> 8u, p_hash >> 16u) & 0xFFu) / 255.0;
+}
+
+// Blue at 0, through cyan, green and yellow, to red at 1.
+vec3 debug_heat_color(float p_t) {
+	float t = clamp(p_t, 0.0, 1.0) * 4.0;
+	return clamp(vec3(t - 2.0, t < 2.0 ? t : 4.0 - t, 2.0 - t), 0.0, 1.0);
+}
+
+// Unshaded color of the cluster debug views at the hit; gray for geometry not traced from clusters.
+vec3 debug_cluster_color(int p_vis_mode) {
+	GeometryData geom = geometries[RT_HIT_GEOMETRY_IDX];
+	if ((geom.flags & FLAG_CLUSTERS) == 0u) {
+		return vec3(0.2);
+	}
+	uint cluster = uint(gl_GeometryIndexEXT);
+	ClusterData data = ClusterBuffer(geom.cluster_address).v[cluster];
+	uint instance_seed = pcg_hash(uint(gl_InstanceCustomIndexEXT));
+	if (p_vis_mode == RT_VIS_CLUSTER_TRIANGLES) {
+		return debug_hash_color(pcg_hash(instance_seed ^ (data.triangle_offset + uint(gl_PrimitiveID))));
+	} else if (p_vis_mode == RT_VIS_CLUSTERS) {
+		return debug_hash_color(pcg_hash(instance_seed ^ cluster));
+	} else if (p_vis_mode == RT_VIS_CLUSTER_GROUPS) {
+		return debug_hash_color(pcg_hash(instance_seed ^ pcg_hash(data.group)));
+	} else if (p_vis_mode == RT_VIS_CLUSTER_LOD_LEVEL) {
+		// Finest (the source mesh) blue, coarsest red.
+		uint level = data.level & 0xFFFFu;
+		uint levels = data.level >> 16u;
+		return debug_heat_color(levels > 1u ? float(level) / float(levels - 1u) : 0.0);
+	}
+	// Simplification error projected to pixels from the ray origin, like a LOD cut would: blue at 0, green at
+	// 1 px, red at 2 px and above.
+	mat4x3 object_to_world = gl_ObjectToWorldEXT;
+	float scale = max(length(object_to_world[0]), max(length(object_to_world[1]), length(object_to_world[2])));
+	vec3 center = object_to_world * vec4(data.center, 1.0);
+	float distance_to_bounds = max(distance(gl_WorldRayOriginEXT, center) - data.radius * scale, scene_data_block.data.z_near);
+	float pixels = data.error * scale / distance_to_bounds * scene_data_block.data.projection_matrix[1][1] * 0.5 * scene_data_block.data.viewport_size.y;
+	return debug_heat_color(pixels * 0.5);
+}
+
 // Opacity range of transparent layers: faint particles stay visible, near-opaque ones still show what's behind.
 #define RT_DYNAMIC_GEOMETRY_MIN_OPACITY 0.35
 #define RT_DYNAMIC_GEOMETRY_MAX_OPACITY 0.75
@@ -451,6 +493,8 @@ void debug_visualize(int vis_mode, MaterialDebugInputs dbg, float alpha) {
 
 	if (material_debug_is_material_mode(vis_mode)) {
 		ps.radiance = material_debug_color(vis_mode, dbg);
+	} else if (rt_debug_is_cluster_mode(vis_mode)) {
+		ps.radiance = debug_cluster_color(vis_mode);
 	} else if (vis_mode == 1) {
 		if (get_total_bounces(ps.packed_bounces_flags) == 0u) {
 			ps.packed_bounces_flags = inc_total_bounce(ps.packed_bounces_flags);

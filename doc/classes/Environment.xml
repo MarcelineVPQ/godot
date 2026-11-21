@@ -581,6 +581,21 @@
 		<constant name="RT_DEBUG_VOLUMETRIC_FOG_WORLD_GRID" value="30" enum="PathtracingDebugMode">
 			Displays the [FogVolume]s in the path tracer's world-space grid (see [member ProjectSettings.rendering/pathtracing/volumetric_fog_world_grid_size]) as the opacity of the primary ray up to its first hit, from black (no fog) to white (opaque). Unlike [constant RT_DEBUG_VOLUMETRIC_FOG], it ignores the [Environment]'s global [member volumetric_fog_density]. Magenta means no grid is bound: path tracing or [member volumetric_fog_enabled] is off.
 		</constant>
+		<constant name="RT_DEBUG_CLUSTER_TRIANGLES" value="31" enum="PathtracingDebugMode">
+			Draws every triangle of geometry traced from clusters in its own random color, unshaded, on a black sky. Geometry traced without clusters is flat gray. See [member ProjectSettings.rendering/pathtracing/cluster_geometry/enabled].
+		</constant>
+		<constant name="RT_DEBUG_CLUSTERS" value="32" enum="PathtracingDebugMode">
+			Like [constant RT_DEBUG_CLUSTER_TRIANGLES], with one random color per cluster (up to 128 triangles) instead of per triangle.
+		</constant>
+		<constant name="RT_DEBUG_CLUSTER_GROUPS" value="33" enum="PathtracingDebugMode">
+			Like [constant RT_DEBUG_CLUSTER_TRIANGLES], with one random color per cluster group: the clusters simplified together into the next level of detail.
+		</constant>
+		<constant name="RT_DEBUG_CLUSTER_LOD_LEVEL" value="34" enum="PathtracingDebugMode">
+			Like [constant RT_DEBUG_CLUSTER_TRIANGLES], colored by each cluster's level of detail, from blue for the source mesh through cyan, green and yellow to red for the mesh's coarsest level. Path tracing currently uses the source mesh's clusters only, so traced clusters are blue.
+		</constant>
+		<constant name="RT_DEBUG_CLUSTER_ERROR" value="35" enum="PathtracingDebugMode">
+			Like [constant RT_DEBUG_CLUSTER_TRIANGLES], colored by each cluster's simplification error projected to pixels at the internal render resolution, as seen from the ray origin: blue for none, green for 1 pixel, red for 2 pixels or more. Path tracing currently uses the source mesh's clusters only, which have no error, so traced clusters are blue.
+		</constant>
 		<constant name="FOG_MODE_EXPONENTIAL" value="0" enum="FogMode">
 			Use a physically-based fog model defined primarily by fog density.
 		</constant>

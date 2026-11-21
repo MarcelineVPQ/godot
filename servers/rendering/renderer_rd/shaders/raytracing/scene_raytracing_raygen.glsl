@@ -757,6 +757,8 @@ void main() {
 			ps.radiance = rt_volumetric_fog_debug(VIS_MODE, rt_volumetric_fog_sky_sample(project_uv(far_world, curr_vp_unjittered)));
 		} else if (VIS_MODE == RT_VIS_VOLUMETRIC_FOG_WORLD_GRID) {
 			ps.radiance = rt_fog_world_grid_debug(gl_WorldRayOriginEXT, gl_WorldRayDirectionEXT, gl_RayTmaxEXT);
+		} else if (rt_debug_is_cluster_mode(VIS_MODE)) {
+			ps.radiance = vec3(0.0);
 		} else if (VIS_MODE == 0) {
 			ps.radiance += ps.throughput * sky_color;
 		} else {
