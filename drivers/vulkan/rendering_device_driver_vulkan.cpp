@@ -7169,6 +7169,18 @@ RDD::RaytracingPipelineID RenderingDeviceDriverVulkan::_rt_get_or_build_hit_grou
 	lib_hit_group.any_hit_shader_index = _remap(p_hit_group.any_hit_shader_index);
 	lib_hit_group.intersection_shader_index = _remap(p_hit_group.intersection_shader_index);
 
+	// A library without stages breaks VUID-VkRayTracingPipelineCreateInfoKHR-pLibraryInfo-07999.
+	// For an empty (null) hit group, carry the pipeline's first closest-hit stage without
+	// referencing it: the group stays all VK_SHADER_UNUSED_KHR, so its handle is still a no-op.
+	if (lib_shaders.is_empty()) {
+		for (uint32_t i = 0; i < p_shaders.size(); i++) {
+			if (p_shaders[i].shader_stage == SHADER_STAGE_CLOSEST_HIT) {
+				lib_shaders.push_back(p_shaders[i]);
+				break;
+			}
+		}
+	}
+
 	// Unlocked: the (possibly slow) driver call shouldn't stall other threads' cache lookups. If
 	// another thread built the same key concurrently, we lose the race below and free this build.
 	RaytracingPipelineID lib = _rt_pipeline_library_create(lib_shaders, VectorView<HitGroup>(lib_hit_group), p_max_trace_recursion_depth, p_layout_defining_shader);
