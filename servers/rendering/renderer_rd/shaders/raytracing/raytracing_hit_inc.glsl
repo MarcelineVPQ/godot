@@ -12,7 +12,7 @@ vec4 fetch_instance_field(GeometryData geom, uint primitive_id, uint shift, vec4
 	uint divisor = geom.instance_data_primitive_divisor;
 	uint instance = divisor == 0u ? 0u : primitive_id / divisor;
 	uint stride = geom.instance_data_layout & 0xffu;
-	FloatBuffer data = FloatBuffer(geom.instance_data_address + uint64_t(instance * stride + offset) * 4ul);
+	RTFloatBuffer data = RTFloatBuffer(geom.instance_data_address + uint64_t(instance * stride + offset) * 4ul);
 	return vec4(data.v[0], data.v[1], data.v[2], data.v[3]);
 }
 
@@ -59,7 +59,7 @@ void get_triangle_indices_ex(in GeometryData geom, uint primitive_id, out uint i
 		i1 = primitive_id * 3u + 1u;
 		i2 = primitive_id * 3u + 2u;
 	} else if (geom.index_address != 0ul) {
-		Uint32Buffer idx = Uint32Buffer(geom.index_address);
+		RTUint32Buffer idx = RTUint32Buffer(geom.index_address);
 		if (geom.index_format == 0u) {
 			uint byte_off = primitive_id * 6u;
 			uint word0 = idx.v[byte_off >> 2];
@@ -113,14 +113,14 @@ vec2 fetch_uv_vertex(in GeometryData geom, uint byte_offset, uint scale_packed, 
 	uint uv_word_offset = byte_offset >> 2;
 
 	if ((geom.flags & FLAG_COMPRESSED_UV) != 0u) {
-		Uint32Buffer attributes = Uint32Buffer(geom.attribute_address);
+		RTUint32Buffer attributes = RTUint32Buffer(geom.attribute_address);
 		uint packed_uv = attributes.v[index * stride_words + uv_word_offset];
 		vec2 uv = vec2(float(packed_uv & 0xFFFFu), float(packed_uv >> 16)) / 65535.0;
 		vec2 scale = unpackHalf2x16(scale_packed);
 		return (scale.x != 0.0 || scale.y != 0.0) ? (uv - 0.5) * scale : uv;
 	}
 
-	FloatBuffer attributes = FloatBuffer(geom.attribute_address);
+	RTFloatBuffer attributes = RTFloatBuffer(geom.attribute_address);
 	uint offset = index * stride_words + uv_word_offset;
 	return vec2(attributes.v[offset], attributes.v[offset + 1u]);
 }
@@ -153,7 +153,7 @@ vec4 fetch_color(in GeometryData geom, uint i0, uint i1, uint i2, vec3 bary) {
 		return vec4(1.0);
 	}
 
-	Uint32Buffer attr = Uint32Buffer(geom.attribute_address);
+	RTUint32Buffer attr = RTUint32Buffer(geom.attribute_address);
 	uint stride_words = geom.attribute_stride >> 2;
 	uint color_word_off = geom.color_byte_offset >> 2;
 
@@ -179,7 +179,7 @@ void axis_angle_to_tbn(vec3 axis, float angle, out vec3 tangent, out vec3 binorm
 
 TBNResult fetch_tbn_compressed_vertex(in GeometryData geom, uint idx) {
 	TBNResult result;
-	Uint32Buffer vb = Uint32Buffer(geom.vertex_address);
+	RTUint32Buffer vb = RTUint32Buffer(geom.vertex_address);
 
 	uint norm_base = geom.normal_byte_offset >> 2;
 	uint norm_stride = geom.normal_stride >> 2;
@@ -201,7 +201,7 @@ TBNResult fetch_tbn_compressed_vertex(in GeometryData geom, uint idx) {
 
 TBNResult fetch_tbn_uncompressed_vertex(in GeometryData geom, uint idx) {
 	TBNResult result;
-	Uint32Buffer vb = Uint32Buffer(geom.vertex_address);
+	RTUint32Buffer vb = RTUint32Buffer(geom.vertex_address);
 
 	uint norm_base = geom.normal_byte_offset >> 2;
 	uint norm_stride = geom.normal_stride >> 2;

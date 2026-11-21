@@ -1340,7 +1340,7 @@ void main() {
 	vec3 m_AABB_MIN = vec3(0.0);
 	vec3 m_AABB_MAX = vec3(0.0);
 	if (rt_geom.vertex_address != 0ul) {
-		FloatBuffer aabb_buf = FloatBuffer(rt_geom.vertex_address);
+		RTFloatBuffer aabb_buf = RTFloatBuffer(rt_geom.vertex_address);
 		int base = int(gl_PrimitiveID) * 6;
 		m_AABB_MIN = vec3(aabb_buf.v[base + 0], aabb_buf.v[base + 1], aabb_buf.v[base + 2]);
 		m_AABB_MAX = vec3(aabb_buf.v[base + 3], aabb_buf.v[base + 4], aabb_buf.v[base + 5]);

@@ -4,10 +4,10 @@
 // ============================================================================
 // BUFFER REFERENCES
 // ============================================================================
-layout(buffer_reference, std430) readonly buffer FloatBuffer {
+layout(buffer_reference, std430) readonly buffer RTFloatBuffer {
 	float v[];
 };
-layout(buffer_reference, std430) readonly buffer Uint32Buffer {
+layout(buffer_reference, std430) readonly buffer RTUint32Buffer {
 	uint v[];
 };
 
@@ -20,7 +20,7 @@ struct ClusterData {
 	vec3 center; // Bounds of the error, in mesh space.
 	float radius;
 };
-layout(buffer_reference, std430) readonly buffer ClusterBuffer {
+layout(buffer_reference, std430) readonly buffer RTClusterDataBuffer {
 	ClusterData v[];
 };
 
@@ -71,7 +71,7 @@ struct GeometryData {
 	uint debug_state; // See RTDynamicGeometryDebug::pack().
 	uint material_index; // See rt_pack_material_index().
 	uint material_flags;
-	uint64_t cluster_address; // ClusterBuffer of geometry traced from clusters (FLAG_CLUSTERS), else 0.
+	uint64_t cluster_address; // RTClusterDataBuffer of geometry traced from clusters (FLAG_CLUSTERS), else 0.
 };
 
 // Triangle p_primitive of geometry index p_geometry_index of a hit, as an index into the triangles of p_geom.
@@ -80,7 +80,7 @@ uint rt_primitive_id(GeometryData p_geom, uint p_geometry_index, uint p_primitiv
 	if ((p_geom.flags & FLAG_CLUSTERS) == 0u) {
 		return p_primitive;
 	}
-	return ClusterBuffer(p_geom.cluster_address).v[p_geometry_index].triangle_offset + p_primitive;
+	return RTClusterDataBuffer(p_geom.cluster_address).v[p_geometry_index].triangle_offset + p_primitive;
 }
 
 // ============================================================================

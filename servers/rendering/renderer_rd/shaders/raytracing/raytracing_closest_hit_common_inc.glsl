@@ -144,7 +144,7 @@ vec3 rt_prev_triangle_object_pos(GeometryData geom, uint p_primitive_id, vec2 p_
 	uint i0, i1, i2;
 	get_triangle_indices_ex(geom, p_primitive_id, i0, i1, i2);
 	vec3 bary = vec3(1.0 - p_bary.x - p_bary.y, p_bary.x, p_bary.y);
-	FloatBuffer prev_vb = FloatBuffer(prev_addr);
+	RTFloatBuffer prev_vb = RTFloatBuffer(prev_addr);
 	uint stride_floats = geom.position_stride >> 2;
 	vec3 p0 = vec3(prev_vb.v[i0 * stride_floats + 0u],
 			prev_vb.v[i0 * stride_floats + 1u],
@@ -422,7 +422,7 @@ vec3 debug_cluster_color(int p_vis_mode) {
 		return vec3(0.2);
 	}
 	uint cluster = uint(gl_GeometryIndexEXT);
-	ClusterData data = ClusterBuffer(geom.cluster_address).v[cluster];
+	ClusterData data = RTClusterDataBuffer(geom.cluster_address).v[cluster];
 	uint instance_seed = pcg_hash(uint(gl_InstanceCustomIndexEXT));
 	if (p_vis_mode == RT_VIS_CLUSTER_TRIANGLES) {
 		return debug_hash_color(pcg_hash(instance_seed ^ RT_HIT_PRIMITIVE_ID(geom)));
