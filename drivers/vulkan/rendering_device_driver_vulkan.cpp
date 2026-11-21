@@ -599,8 +599,8 @@ Error RenderingDeviceDriverVulkan::_initialize_device_extensions() {
 	_register_requested_device_extension(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME, false); // Required by VK_KHR_ray_tracing_pipeline when using pipeline libraries.
 	_register_requested_device_extension(VK_KHR_RAY_QUERY_EXTENSION_NAME, false);
 	_register_requested_device_extension(VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME, false);
-	// Opt-in while the path tracer's use of it is new; when off, the device is set up as before.
-	if (GLOBAL_GET("rendering/pathtracing/cluster_geometry/enabled")) {
+	// Opt-in while it is new; when off, the device is set up as before.
+	if (GLOBAL_GET("rendering/rendering_device/vulkan/request_cluster_acceleration_structure")) {
 		_register_requested_device_extension(VK_NV_CLUSTER_ACCELERATION_STRUCTURE_EXTENSION_NAME, false);
 	}
 	if (Engine::get_singleton()->is_raytracing_validation_enabled()) {

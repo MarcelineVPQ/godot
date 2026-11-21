@@ -1832,8 +1832,8 @@ ProjectSettings::ProjectSettings() {
 	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/rendering_device/pipeline_cache/save_chunk_size_mb", PROPERTY_HINT_RANGE, "0.000001,64.0,0.001,or_greater"), 3.0);
 	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/rendering_device/pipeline_cache/max_size_mb", PROPERTY_HINT_RANGE, "1,2047,1"), 1024);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/rendering_device/vulkan/max_descriptors_per_pool", PROPERTY_HINT_RANGE, "1,256,1,or_greater"), 64);
-	// Defined here, not in RenderingServer::init(), because the Vulkan driver reads it when it creates the device, to
-	// decide whether to enable the cluster acceleration structure extension.
+	// Defined here, not in RenderingServer::init(), because Main::setup() reads it as the default of
+	// rendering/rendering_device/vulkan/request_cluster_acceleration_structure, before the rendering device exists.
 	GLOBAL_DEF_RST("rendering/pathtracing/cluster_geometry/enabled", false);
 
 	GLOBAL_DEF_RST("rendering/rendering_device/d3d12/max_resource_descriptors", 65536);
