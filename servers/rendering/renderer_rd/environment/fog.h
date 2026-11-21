@@ -373,7 +373,8 @@ public:
 	};
 
 	// World-aligned medium grid around the camera for the path tracer, filled from the same fog volume shaders
-	// as the froxels. Each map holds the froxel pass's packed atomics: density, scattering and emission.
+	// as the froxels (MODE_WORLD_GRID in volumetric_fog.glsl). The maps hold signed fixed-point sums: the extinction,
+	// and per colour channel the scattering coefficient and the emitted radiance per meter, one z slab per channel.
 	class VolumetricFogWorldGrid : public RenderBufferCustomDataRD {
 		GDCLASS(VolumetricFogWorldGrid, RenderBufferCustomDataRD)
 
@@ -385,8 +386,8 @@ public:
 		Vector3 origin;
 
 		RID density_map;
-		RID light_map;
-		RID emissive_map;
+		RID light_map; // Scattering, size.z * 3 deep.
+		RID emissive_map; // Emission, size.z * 3 deep.
 		RID majorant_map; // Highest density of each brick of WORLD_GRID_BRICK_SIZE^3 voxels.
 
 		// Voxel box holding this frame's FogVolumes, empty when there are none.

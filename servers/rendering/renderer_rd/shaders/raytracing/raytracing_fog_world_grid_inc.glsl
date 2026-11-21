@@ -1,6 +1,8 @@
 // World-space fog grid lookups for the path tracer. Fog::volumetric_fog_world_grid_update() renders the FogVolumes
 // into a world-aligned grid around the camera, so unlike the froxels any path segment can sample it.
-// The maps hold the froxel pass's packed atomics (see volumetric_fog.glsl).
+// The maps hold signed fixed-point sums at RT_FOG_WORLD_GRID_SCALE (see MODE_WORLD_GRID in volumetric_fog.glsl): the
+// extinction, and per colour channel the scattering coefficient and the emitted radiance per meter. The scattering and
+// emission maps hold one slab of the grid's size per channel, stacked along z.
 
 layout(set = 0, binding = 42) uniform utexture3D rt_fog_world_grid_density;
 layout(set = 0, binding = 43) uniform utexture3D rt_fog_world_grid_scattering;
@@ -8,15 +10,16 @@ layout(set = 0, binding = 44) uniform utexture3D rt_fog_world_grid_emission;
 // Highest density of each brick of RT_FOG_WORLD_GRID_BRICK_SIZE^3 voxels, packed like the density map.
 layout(set = 0, binding = 45) uniform utexture3D rt_fog_world_grid_majorant;
 
-#define RT_FOG_WORLD_GRID_DENSITY_SCALE 1024.0
+// Must match DENSITY_SCALE of MODE_WORLD_GRID in volumetric_fog.glsl.
+#define RT_FOG_WORLD_GRID_SCALE 16384.0
 #define RT_FOG_WORLD_GRID_BRICK_SIZE 8.0
 // Tentative collisions one tracked ray may test. Past this, the rest of the ray counts as clear.
 #define RT_FOG_WORLD_GRID_MAX_COLLISIONS 256
 
 struct RTFogWorldGridSample {
 	float extinction; // DENSITY, per meter.
-	vec3 albedo; // ALBEDO, recovered from the stored scattering.
-	vec3 emission; // EMISSION scaled by min(DENSITY, 1), as the froxel pass stores it.
+	vec3 albedo; // ALBEDO: the scattering coefficient over the extinction.
+	vec3 emission; // Emitted radiance per meter: EMISSION * DENSITY.
 };
 
 bool rt_fog_world_grid_enabled() {
@@ -45,12 +48,13 @@ bool rt_fog_world_grid_transport_enabled() {
 	return rt_fog_world_grid_enabled() && get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_X) > get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_X);
 }
 
-float rt_fog_world_grid_unpack_density(uint p_density) {
-	return max(0.0, float(int(p_density)) / RT_FOG_WORLD_GRID_DENSITY_SCALE);
+// Subtractive volumes can leave a sum below zero; there is then no medium.
+float rt_fog_world_grid_unpack(uint p_value) {
+	return max(0.0, float(int(p_value)) / RT_FOG_WORLD_GRID_SCALE);
 }
 
 float rt_fog_world_grid_extinction_at_voxel(ivec3 p_voxel) {
-	return rt_fog_world_grid_unpack_density(texelFetch(usampler3D(rt_fog_world_grid_density, SAMPLER_NEAREST_CLAMP), p_voxel, 0).x);
+	return rt_fog_world_grid_unpack(texelFetch(usampler3D(rt_fog_world_grid_density, SAMPLER_NEAREST_CLAMP), p_voxel, 0).x);
 }
 
 // Extinction at p_world (nearest voxel), none outside the grid.
@@ -66,13 +70,14 @@ RTFogWorldGridSample rt_fog_world_grid_sample_voxel(ivec3 p_voxel) {
 	RTFogWorldGridSample s;
 	s.extinction = rt_fog_world_grid_extinction_at_voxel(p_voxel);
 
-	uint scattering_u = texelFetch(usampler3D(rt_fog_world_grid_scattering, SAMPLER_NEAREST_CLAMP), p_voxel, 0).x;
-	vec3 scattering = vec3(scattering_u >> 21, (scattering_u << 11) >> 21, scattering_u % 1024) / vec3(2047.0, 2047.0, 1023.0);
-	// Stored as ALBEDO * min(DENSITY, 1). Overlapping volumes add up, so this is their density-weighted mix.
-	s.albedo = clamp(scattering / clamp(s.extinction, 1e-4, 1.0), vec3(0.0), vec3(1.0));
-
-	uint emission_u = texelFetch(usampler3D(rt_fog_world_grid_emission, SAMPLER_NEAREST_CLAMP), p_voxel, 0).x;
-	s.emission = vec3(emission_u >> 21, (emission_u << 11) >> 21, emission_u % 1024) / vec3(511.0, 511.0, 255.0);
+	vec3 scattering;
+	for (int c = 0; c < 3; c++) {
+		ivec3 texel = ivec3(p_voxel.xy, p_voxel.z + c * rt_fog_world_grid_size().z);
+		scattering[c] = rt_fog_world_grid_unpack(texelFetch(usampler3D(rt_fog_world_grid_scattering, SAMPLER_NEAREST_CLAMP), texel, 0).x);
+		s.emission[c] = rt_fog_world_grid_unpack(texelFetch(usampler3D(rt_fog_world_grid_emission, SAMPLER_NEAREST_CLAMP), texel, 0).x);
+	}
+	// Overlapping volumes add up, so this is their extinction-weighted mix of ALBEDO.
+	s.albedo = s.extinction > 0.0 ? clamp(scattering / s.extinction, vec3(0.0), vec3(1.0)) : vec3(0.0);
 	return s;
 }
 
@@ -197,7 +202,7 @@ float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_r
 	int max_steps = brick_count.x + brick_count.y + brick_count.z;
 	for (int i = 0; i < max_steps; i++) {
 		float s_exit = min(min(min(s_next.x, s_next.y), s_next.z), s_end);
-		float majorant = rt_fog_world_grid_unpack_density(texelFetch(usampler3D(rt_fog_world_grid_majorant, SAMPLER_NEAREST_CLAMP), brick, 0).x);
+		float majorant = rt_fog_world_grid_unpack(texelFetch(usampler3D(rt_fog_world_grid_majorant, SAMPLER_NEAREST_CLAMP), brick, 0).x);
 		if (majorant > 0.0) {
 			float t = s * brick_size;
 			float t_exit = s_exit * brick_size;

@@ -1318,6 +1318,8 @@ void Fog::VolumetricFogWorldGrid::init(const Vector3i &p_size) {
 
 	density_map = RD::get_singleton()->texture_create(tf, RD::TextureView());
 	RD::get_singleton()->set_resource_name(density_map, "Fog world grid density map");
+	// One slab per colour channel, stacked along z.
+	tf.depth = p_size.z * 3;
 	light_map = RD::get_singleton()->texture_create(tf, RD::TextureView());
 	RD::get_singleton()->set_resource_name(light_map, "Fog world grid light map");
 	emissive_map = RD::get_singleton()->texture_create(tf, RD::TextureView());
@@ -1364,7 +1366,8 @@ void Fog::volumetric_fog_world_grid_update(RenderSceneBuffersRD *p_render_buffer
 	const Vector3 grid_extent = GLOBAL_GET_CACHED(Vector3, "rendering/pathtracing/volumetric_fog_world_grid_size");
 	const float voxel_size = MAX(float(GLOBAL_GET_CACHED(double, "rendering/pathtracing/volumetric_fog_world_grid_voxel_size")), 0.01f);
 	const int32_t max_size = rd->limit_get(RD::LIMIT_MAX_TEXTURE_SIZE_3D);
-	const Vector3i size = Vector3i((grid_extent / voxel_size).ceil()).clampi(1, max_size);
+	// The scattering and emission maps stack three grids along z.
+	const Vector3i size = Vector3i((grid_extent / voxel_size).ceil()).clamp(Vector3i(1, 1, 1), Vector3i(max_size, max_size, max_size / 3));
 
 	Ref<VolumetricFogWorldGrid> grid;
 	if (p_render_buffers->has_custom_data(RB_SCOPE_FOG_WORLD_GRID)) {

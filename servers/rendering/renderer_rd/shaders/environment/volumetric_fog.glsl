@@ -10,7 +10,13 @@
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 
+#ifdef MODE_WORLD_GRID
+// Fixed point of the world grid's maps: finer than the froxels', so thin media keep their albedo. Sums up to 131072
+// per meter fit. Must match RT_FOG_WORLD_GRID_SCALE in raytracing_fog_world_grid_inc.glsl.
+#define DENSITY_SCALE 16384.0
+#else
 #define DENSITY_SCALE 1024.0
+#endif
 
 #include "../cluster_data_inc.glsl"
 #include "../light_data_inc.glsl"
@@ -110,6 +116,7 @@ float get_depth_at_pos(float cell_depth_size, int z) {
 }
 #endif
 
+#ifndef MODE_WORLD_GRID
 #define TEMPORAL_FRAMES 16
 
 const vec3 halton_map[TEMPORAL_FRAMES] = vec3[](
@@ -129,6 +136,17 @@ const vec3 halton_map[TEMPORAL_FRAMES] = vec3[](
 		vec3(0.4375, 0.81481481, 0.88),
 		vec3(0.9375, 0.25925926, 0.12),
 		vec3(0.03125, 0.59259259, 0.32));
+#endif
+
+#ifdef MODE_WORLD_GRID
+// Adds p_value to channel p_channel of the world grid's scattering (light) or emission map at p_pos: the maps hold one
+// slab of fog_volume_size voxels per channel, stacked along z.
+#ifdef NO_IMAGE_ATOMICS
+#define WORLD_GRID_ADD(m_map, m_pos, m_channel, m_value) atomicAdd(m_map[lpos + uint(m_channel) * uint(scene_params.fog_volume_size.x * scene_params.fog_volume_size.y * scene_params.fog_volume_size.z)], uint(m_value))
+#else
+#define WORLD_GRID_ADD(m_map, m_pos, m_channel, m_value) imageAtomicAdd(m_map, ivec3(m_pos.xy, m_pos.z + (m_channel) * scene_params.fog_volume_size.z), uint(m_value))
+#endif
+#endif
 
 void main() {
 	ivec3 pos = ivec3(gl_GlobalInvocationID.xyz) + params.corner;
@@ -245,6 +263,36 @@ void main() {
 
 #ifdef DENSITY_USED
 		density *= cull_mask;
+#ifdef MODE_WORLD_GRID
+		// The path tracer's medium: DENSITY is the extinction per meter, ALBEDO the share of it that scatters, and the
+		// emitted radiance per meter is EMISSION * DENSITY, so a thick medium that doesn't scatter glows with EMISSION.
+		// Each is stored per channel as a coefficient at DENSITY_SCALE and overlapping volumes add up, so albedo and
+		// emission come back as ratios to the summed density. Subtractive volumes subtract their share.
+		int final_density = int(round(density * DENSITY_SCALE));
+		if (final_density != 0) {
+#ifdef NO_IMAGE_ATOMICS
+			atomicAdd(density_only_map[lpos], uint(final_density));
+#else
+			imageAtomicAdd(density_only_map, pos, uint(final_density));
+#endif
+#ifdef ALBEDO_USED
+			ivec3 scattering_i = ivec3(round(albedo * density * DENSITY_SCALE));
+			for (int c = 0; c < 3; c++) {
+				if (scattering_i[c] != 0) {
+					WORLD_GRID_ADD(light_only_map, pos, c, scattering_i[c]);
+				}
+			}
+#endif
+#ifdef EMISSION_USED
+			ivec3 emission_i = ivec3(round(emission * density * DENSITY_SCALE));
+			for (int c = 0; c < 3; c++) {
+				if (emission_i[c] != 0) {
+					WORLD_GRID_ADD(emissive_only_map, pos, c, emission_i[c]);
+				}
+			}
+#endif
+		}
+#else
 		if (abs(density) > 0.001) {
 			int final_density = int(density * DENSITY_SCALE);
 #ifdef NO_IMAGE_ATOMICS
@@ -317,6 +365,7 @@ void main() {
 			}
 #endif // ALBEDO_USED
 		}
+#endif // MODE_WORLD_GRID
 #endif // DENSITY_USED
 	}
 }
