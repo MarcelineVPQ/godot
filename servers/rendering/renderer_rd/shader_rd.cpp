@@ -1007,7 +1007,8 @@ bool ShaderRD::shader_cache_cleanup_on_start = false;
 ShaderRD::ShaderRD() {
 	// Do not feel forced to use this, in most cases it makes little to no difference.
 	bool use_32_threads = false;
-	if (RD::get_singleton()->get_device_vendor_name() == "NVIDIA") {
+	// Without a rendering device (shaders compiled offline, as in the unit tests) there is no vendor to tune for.
+	if (RD::get_singleton() && RD::get_singleton()->get_device_vendor_name() == "NVIDIA") {
 		use_32_threads = true;
 	}
 	String base_compute_define_text;
