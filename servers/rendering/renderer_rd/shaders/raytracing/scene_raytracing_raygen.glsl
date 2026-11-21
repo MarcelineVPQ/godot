@@ -256,6 +256,9 @@ void rt_medium_scatter(inout PathState r_ps, vec3 p_pos, vec3 p_dir, float p_t, 
 // Where the medium hides most of what's behind, the primary ray's depth, motion and DLSS-RR guides become those of the
 // fog at the point where its transmittance falls to one half, facing the camera. Unlike the scatter events, that point
 // doesn't change with the samples, so the guides don't flicker. p_dir is unit, p_t_end in meters. Returns true if it wrote.
+// The depth is copied into the depth buffer, so what reads that after the trace sees the fog there as a surface: the
+// raster transparent pass (editor gizmos and transparent objects drawn there are hidden behind it), screen-space
+// effects that read depth, and DLSS. The docs of the transport setting say so.
 bool rt_medium_write_primary_guides(vec3 p_origin, vec3 p_dir, float p_t_end) {
 	float t_half = rt_medium_depth_distance(p_origin, p_dir, p_t_end, 0.693147);
 	if (t_half < 0.0) {

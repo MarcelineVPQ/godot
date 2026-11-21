@@ -381,7 +381,10 @@ bool lights_select(vec3 hit_pos, uint first, uint count, uint instance_layers, i
 		return false;
 	}
 
-	// Estimate valid count from sample ratio, PDF = 1/validCount.
+	// Estimate valid count from sample ratio, PDF = 1/validCount. This is resampled importance sampling with the
+	// candidates' validity as its target, and 1 / r_select_pdf = count * valid_found / k is exactly its weight: the
+	// estimate stays unbiased however unevenly lights are culled, since a culled light (other layers, out of range) adds
+	// nothing at hit_pos. The medium's next event estimation uses it the same way.
 	float valid_count_estimate = float(count) * (float(valid_found) / float(k));
 	r_select_pdf = 1.0 / max(valid_count_estimate, 1.0);
 	return true;

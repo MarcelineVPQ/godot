@@ -136,7 +136,9 @@ private:
 
 			Vector4 uv_scale;
 
-			// See mesh_cluster_data.h. Kept on the CPU: the path tracer uploads what it traces.
+			// See mesh_cluster_data.h. Kept on the CPU: the path tracer uploads what it traces, and builds its BLAS again
+			// from it whenever its caches are rebuilt; mesh_get_surface() returns it for saving. Dropping it after the
+			// upload would make those read it back from the GPU.
 			Vector<uint8_t> cluster_data;
 
 			RID blend_shape_buffer;
