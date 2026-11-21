@@ -167,8 +167,10 @@ public:
 	void finalize();
 	bool is_enabled() const { return enabled; }
 
-	// Queues the first build of a surface's cluster set; it is built before any cut is picked from it.
+	// Queues the first build of a surface's cluster set; it is built before any instance of it is traced.
 	void add_cluster_set(RID p_cluster_set) { pending_cluster_sets.push_back(p_cluster_set); }
+	// Drops what is known about a surface's cluster set before it is freed.
+	void forget_cluster_set(RID p_cluster_set) { failed_cluster_sets.erase(p_cluster_set); }
 
 	// Takes the camera of p_render_data for the cuts of this frame.
 	void begin_view(View &r_view, const RenderDataRD *p_render_data);

@@ -148,6 +148,9 @@ float RTClusterLodSelector::_staleness(const View &p_view, const View::Instance 
 
 RID RTClusterLodSelector::instance_blas(View &r_view, const Key &p_key, const RTClusterLodSurface &p_surface, const Transform3D &p_transform) {
 	ERR_FAIL_COND_V(!r_view.active, RID());
+	// Building new cluster sets here, before their first instance goes into a TLAS, leaves a failed one out of this
+	// frame's TLAS too; a set is new only on the first frame its surface is traced.
+	_build_pending_cluster_sets();
 	if (failed_cluster_sets.has(p_surface.cluster_set)) {
 		return RID();
 	}
@@ -251,18 +254,6 @@ void RTClusterLodSelector::end_view(View &r_view, LocalVector<RID> &r_dirty_blas
 	r_view.deferred = 0;
 	if (!r_view.active) {
 		return;
-	}
-	_build_pending_cluster_sets();
-	if (!failed_cluster_sets.is_empty()) {
-		// No cut can be picked from a set that wasn't built. These instances were added to this frame's TLAS before the
-		// build, whose validation reports their unbuilt BLASes; from the next frame on, instance_blas() leaves them out.
-		for (uint32_t i = 0; i < r_view.candidates.size();) {
-			if (failed_cluster_sets.has(r_view.candidates[i].instance->cluster_set)) {
-				r_view.candidates.remove_at_unordered(i);
-			} else {
-				i++;
-			}
-		}
 	}
 
 	// Instances without a cut first, then the stalest, up to the budget.

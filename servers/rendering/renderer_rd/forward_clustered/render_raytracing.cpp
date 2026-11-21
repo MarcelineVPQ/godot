@@ -882,6 +882,7 @@ void RenderRaytracing::cleanup_caches() {
 				RTCacheEntry *entry = &surface_chunks[i][j];
 				if (entry->ptr) {
 					_free_blas_resources(blas_transform_pool, entry->ptr->blas, &entry->ptr->blas_transform, 1);
+					cluster_lod.forget_cluster_set(entry->ptr->cluster_buffers.lod.cluster_set);
 					_free_cluster_buffers(entry->ptr->cluster_buffers);
 					memdelete(entry->ptr);
 					entry->ptr = nullptr;
@@ -1317,6 +1318,7 @@ RTSurfaceData *RenderRaytracing::process_surface_cached(
 		entry->ptr = memnew(RTSurfaceData);
 	} else {
 		_free_blas_resources(blas_transform_pool, entry->ptr->blas, &entry->ptr->blas_transform, 1);
+		cluster_lod.forget_cluster_set(entry->ptr->cluster_buffers.lod.cluster_set);
 		_free_cluster_buffers(entry->ptr->cluster_buffers);
 	}
 
