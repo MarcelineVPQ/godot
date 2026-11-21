@@ -49,7 +49,7 @@ class DLSSContextNGX : public DLSSContext {
 public:
 	NGXContext::Quality quality = NGXContext::QUALITY_OFF;
 	void *feature = nullptr; // Created on first use, inside the render graph.
-	bool ray_reconstruction = false; // Whether the last upscale() got the Ray Reconstruction guides.
+	bool feature_alpha_upscaling = false; // The alpha upscaling the feature was created with.
 
 	virtual ~DLSSContextNGX() {
 		// Frames still in flight may use the feature, so NGX releases it once they are done.
@@ -76,7 +76,8 @@ static NGXContext::Resource ngx_resource(RID p_texture, bool p_read_write) {
 	resource.format = (uint32_t)RD::get_singleton()->get_driver_resource(RD::DRIVER_RESOURCE_TEXTURE_DATA_FORMAT, p_texture);
 	resource.width = format.width;
 	resource.height = format.height;
-	resource.depth = format.format >= RD::DATA_FORMAT_D16_UNORM && format.format <= RD::DATA_FORMAT_D32_SFLOAT_S8_UINT;
+	// Formats with depth; S8_UINT is in the range but has stencil only.
+	resource.depth = format.format >= RD::DATA_FORMAT_D16_UNORM && format.format <= RD::DATA_FORMAT_D32_SFLOAT_S8_UINT && format.format != RD::DATA_FORMAT_S8_UINT;
 	resource.read_write = p_read_write;
 	return resource;
 }
@@ -110,9 +111,6 @@ DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_
 void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {
 	DLSSContextNGX *context = (DLSSContextNGX *)p_params.context;
 
-	NGXContext::get().dlssd_release_pending(RD::get_singleton()->get_frames_drawn());
-
-	context->ray_reconstruction = p_params.dlss_rr;
 	if (!p_params.dlss_rr) {
 		if (NGXContext::get().is_dlssd_available()) {
 			WARN_PRINT_ONCE("On Linux, DLSS works only as Ray Reconstruction for the path tracer. Set the Environment's path tracing denoiser to DLSS Ray Reconstruction to use it.");
@@ -205,6 +203,11 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 	info.normal_roughness = ngx_resource(p_params.dlss_rr_normal_roughness, false);
 	info.specular_motion_vectors = ngx_resource(p_params.dlss_rr_specular_motion_vectors, false);
 
+	if (context->feature != nullptr && context->feature_alpha_upscaling != p_params.dlss_rr_alpha_upscaling) {
+		// Alpha upscaling is a creation flag, so the feature is made again.
+		NGXContext::get().dlssd_release(context->feature, RD::get_singleton()->get_frames_drawn() + RD::get_singleton()->get_frame_delay() + 1);
+		context->feature = nullptr;
+	}
 	if (context->feature == nullptr) {
 		NGXContext::DLSSDCreateInfo create_info;
 		create_info.render_width = info.color.width;
@@ -213,6 +216,7 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 		create_info.target_height = info.output.height;
 		create_info.quality = context->quality;
 		create_info.depth_inverted = p_params.reverse_depth;
+		create_info.alpha_upscaling = p_params.dlss_rr_alpha_upscaling;
 		create_info.preset = p_params.preset;
 		if (create_info.preset == '?') {
 			// Shared with the Streamline path, which reads the same project setting.
@@ -226,6 +230,7 @@ void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext
 			context->quality = NGXContext::QUALITY_OFF; // Don't retry every frame; the error was printed once.
 			return;
 		}
+		context->feature_alpha_upscaling = create_info.alpha_upscaling;
 	}
 
 	// Motion vectors are in UV units (as for Streamline's mvecScale of 1 and FSR2); NGX wants pixels.
@@ -246,11 +251,10 @@ void RendererRD::DLSSEffect::_upscale_internal_graph_callback(RenderingDeviceDri
 	self->last_effect->_upscale_internal(p_command_buffer, self->last_parameters);
 }
 
-bool DLSSEffect::is_ready(DLSSContext *p_context) {
-	DLSSContextNGX *context = (DLSSContextNGX *)p_context;
-	// ray_reconstruction comes from the previous upscale() call, so a viewport that stops using the
-	// path tracer falls back one frame late.
-	return NGXContext::get().is_dlssd_available() && context->quality != NGXContext::QUALITY_OFF && context->delay == 0 && context->ray_reconstruction;
+bool DLSSEffect::is_ready(const DLSSContext::Parameters &p_params) {
+	const DLSSContextNGX *context = (const DLSSContextNGX *)p_params.context;
+	// The same conditions upscale() writes the output under.
+	return p_params.dlss_rr && NGXContext::get().is_dlssd_available() && context->quality != NGXContext::QUALITY_OFF && context->delay == 0;
 }
 
 #endif // defined(NGX_ENABLED) && !defined(STREAMLINE_ENABLED)

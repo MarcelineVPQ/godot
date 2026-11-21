@@ -368,10 +368,12 @@ void *NGXContext::dlssd_create(void *p_command_buffer, const DLSSDCreateInfo &p_
 	ERR_FAIL_INDEX_V(p_info.quality, QUALITY_COUNT, nullptr);
 	NVSDK_NGX_Parameter *parameters = (NVSDK_NGX_Parameter *)feature_parameters;
 
-	// Presets as in DLSSEffect's Streamline path: '?' is NVIDIA's default, 'D' and later map to the NGX enum.
+	// '?' is NVIDIA's default. The SDK marks the presets after F "do not use": they fall back to the default.
 	NVSDK_NGX_RayReconstruction_Hint_Render_Preset preset = NVSDK_NGX_RayReconstruction_Hint_Render_Preset_Default;
-	if (p_info.preset >= 'D' && p_info.preset <= 'O') {
+	if (p_info.preset >= 'D' && p_info.preset <= 'F') {
 		preset = (NVSDK_NGX_RayReconstruction_Hint_Render_Preset)(NVSDK_NGX_RayReconstruction_Hint_Render_Preset_D + (p_info.preset - 'D'));
+	} else if (p_info.preset != '?') {
+		WARN_PRINT_ONCE(vformat("DLSS Ray Reconstruction preset %c isn't offered on Linux, which has presets D, E and F. NVIDIA's default preset is used instead.", p_info.preset));
 	}
 	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_DLAA, preset);
 	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Quality, preset);
@@ -384,6 +386,9 @@ void *NGXContext::dlssd_create(void *p_command_buffer, const DLSSDCreateInfo &p_
 	int flags = NVSDK_NGX_DLSS_Feature_Flags_IsHDR | NVSDK_NGX_DLSS_Feature_Flags_MVLowRes;
 	if (p_info.depth_inverted) {
 		flags |= NVSDK_NGX_DLSS_Feature_Flags_DepthInverted;
+	}
+	if (p_info.alpha_upscaling) {
+		flags |= NVSDK_NGX_DLSS_Feature_Flags_AlphaUpscaling;
 	}
 
 	NVSDK_NGX_DLSSD_Create_Params create_params = {};
@@ -456,7 +461,10 @@ void NGXContext::dlssd_release(void *p_feature, uint64_t p_release_frame) {
 	pending_releases.push_back(release);
 }
 
-void NGXContext::dlssd_release_pending(uint64_t p_current_frame) {
+void NGXContext::dlssd_release_pending(void *p_device, uint64_t p_current_frame) {
+	if (p_device != device) {
+		return; // Another rendering device, with its own frame count.
+	}
 	for (uint32_t i = 0; i < pending_releases.size();) {
 		if (pending_releases[i].frame <= p_current_frame) {
 			NVSDK_NGX_VULKAN_ReleaseFeature((NVSDK_NGX_Handle *)pending_releases[i].feature);

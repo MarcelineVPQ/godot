@@ -87,7 +87,8 @@ public:
 	~DLSSEffect();
 	DLSSContext *create_context(Size2i p_internal_size, Size2i p_target_size);
 	void upscale(const DLSSContext::Parameters &p_params);
-	bool is_ready(DLSSContext *context);
+	// Whether upscale() with p_params writes the output this frame. Call it before upscale().
+	bool is_ready(const DLSSContext::Parameters &p_params);
 
 private:
 	void _upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext::Parameters &p_params);

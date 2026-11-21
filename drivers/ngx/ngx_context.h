@@ -78,6 +78,7 @@ public:
 		Quality quality = QUALITY_OFF;
 		char preset = '?';
 		bool depth_inverted = true;
+		bool alpha_upscaling = false; // Upscales the colour's alpha too.
 	};
 
 	struct DLSSDEvaluateInfo {
@@ -123,7 +124,8 @@ public:
 	bool dlssd_evaluate(void *p_command_buffer, void *p_feature, const DLSSDEvaluateInfo &p_info);
 	// The GPU may still be using the feature, so it is released once p_release_frame has been reached.
 	void dlssd_release(void *p_feature, uint64_t p_release_frame);
-	void dlssd_release_pending(uint64_t p_current_frame);
+	// Called by the Vulkan driver at the start of every frame of p_device (a VkDevice).
+	void dlssd_release_pending(void *p_device, uint64_t p_current_frame);
 
 private:
 	struct PendingRelease {

@@ -7908,6 +7908,10 @@ inline String RenderingDeviceDriverVulkan::get_vulkan_result(VkResult err) {
 
 void RenderingDeviceDriverVulkan::begin_segment(uint32_t p_frame_index, uint32_t p_frames_drawn) {
 	// Per-frame segments are not required in Vulkan.
+#ifdef NGX_ENABLED
+	// DLSS features are released here, so they don't wait for a viewport to upscale again.
+	NGXContext::get().dlssd_release_pending(vk_device, p_frames_drawn);
+#endif
 }
 
 void RenderingDeviceDriverVulkan::end_segment() {

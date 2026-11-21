@@ -593,8 +593,8 @@ void RendererRD::DLSSEffect::_upscale_internal_graph_callback(RenderingDeviceDri
 	self->last_effect->_upscale_internal(p_command_buffer, self->last_parameters);
 }
 
-bool DLSSEffect::is_ready(DLSSContext *p_context) {
-	DLSSContextInner *context = (DLSSContextInner *)p_context;
+bool DLSSEffect::is_ready(const DLSSContext::Parameters &p_params) {
+	DLSSContextInner *context = (DLSSContextInner *)p_params.context;
 	if (context->currentDlssOptions.mode == sl::DLSSMode::eOff) {
 		return false; // unsupported mode.
 	}
@@ -610,7 +610,7 @@ DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_
 	return nullptr;
 }
 void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {}
-bool DLSSEffect::is_ready(DLSSContext *p_context) {
+bool DLSSEffect::is_ready(const DLSSContext::Parameters &p_params) {
 	return false;
 }
 void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext::Parameters &p_params) {}
