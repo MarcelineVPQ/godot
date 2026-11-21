@@ -4,7 +4,8 @@
 
 #VERSION_DEFINES
 
-// Highest density of each brick of the path tracer's fog world grid, so its tracking can skip clear space.
+// Highest density of each brick of the path tracer's fog world grid and the voxels around it, so its tracking can skip
+// clear space.
 
 #define BRICK_SIZE 4
 
@@ -19,8 +20,10 @@ void main() {
 		return;
 	}
 
-	ivec3 from = brick * BRICK_SIZE;
-	ivec3 to = min(from + BRICK_SIZE, imageSize(density_map));
+	// The brick's voxels and one more on each side: the path tracer interpolates the densities between voxel centers,
+	// which mixes in the voxels next to the brick, and the majorant must bound what it reads there.
+	ivec3 from = max(brick * BRICK_SIZE - 1, ivec3(0));
+	ivec3 to = min(brick * BRICK_SIZE + BRICK_SIZE + 1, imageSize(density_map));
 	// Densities are signed fixed point; subtractive volumes can leave voxels below zero.
 	int majorant = 0;
 	for (int z = from.z; z < to.z; z++) {

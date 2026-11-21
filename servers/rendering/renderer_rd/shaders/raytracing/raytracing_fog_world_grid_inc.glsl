@@ -45,13 +45,15 @@ ivec3 rt_fog_world_grid_size() {
 	return textureSize(usampler3D(rt_fog_world_grid_density, SAMPLER_NEAREST_CLAMP), 0);
 }
 
-// Voxel box holding every FogVolume this frame. Empty when light transport through the grid is off.
+// Voxel box holding every FogVolume this frame, grown by a voxel on each side: the medium is interpolated between voxel
+// centers (rt_fog_world_grid_extinction()), so it reaches half a voxel past the voxels the volumes fill. Empty when light
+// transport through the grid is off.
 vec3 rt_fog_world_grid_occupied_min() {
-	return vec3(get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_X), get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_Y), get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_Z));
+	return max(vec3(get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_X), get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_Y), get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MIN_Z)) - 1.0, vec3(0.0));
 }
 
 vec3 rt_fog_world_grid_occupied_max() {
-	return vec3(get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_X), get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Y), get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Z));
+	return min(vec3(get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_X), get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Y), get_rt_param(RT_PARAM_FOG_WORLD_GRID_OCCUPIED_MAX_Z)) + 1.0, vec3(rt_fog_world_grid_size()));
 }
 
 // True when path segments and shadow rays scatter, absorb and emit in the grid (rendering/pathtracing/volumetric_fog_world_grid_transport).
@@ -121,7 +123,43 @@ RTFogWorldGridSample rt_fog_world_grid_sample_voxel(ivec3 p_voxel) {
 	return s;
 }
 
-// The medium at p_world (nearest voxel). Outside the grid, or without one, there is none.
+// The first of the 8 voxels whose centers surround p_world, and the weights toward the last (trilinear interpolation).
+ivec3 rt_fog_world_grid_corner(vec3 p_world, out vec3 r_weight) {
+	vec3 g = (p_world - rt_fog_world_grid_origin()) / get_rt_param(RT_PARAM_FOG_WORLD_GRID_VOXEL_SIZE) - 0.5;
+	vec3 first = floor(g);
+	r_weight = g - first;
+	return ivec3(first);
+}
+
+// Weight of corner p_corner (0 or 1 per axis) for weights p_weight toward the last corner.
+float rt_fog_world_grid_corner_weight(ivec3 p_corner, vec3 p_weight) {
+	vec3 w = mix(1.0 - p_weight, p_weight, vec3(p_corner));
+	return w.x * w.y * w.z;
+}
+
+bool rt_fog_world_grid_in_grid(ivec3 p_voxel) {
+	return all(greaterThanEqual(p_voxel, ivec3(0))) && all(lessThan(p_voxel, rt_fog_world_grid_size()));
+}
+
+// The extinction at p_world, interpolated between the 8 voxel centers around it, so the medium is smooth rather than
+// made of voxel blocks. Voxels outside the grid hold none. The brick majorants are taken over each brick and the voxels
+// around it (volumetric_fog_world_grid_majorant.glsl), so they bound it everywhere in the brick.
+float rt_fog_world_grid_extinction(vec3 p_world) {
+	vec3 weight;
+	ivec3 first = rt_fog_world_grid_corner(p_world, weight);
+	float extinction = 0.0;
+	for (int i = 0; i < 8; i++) {
+		ivec3 corner = ivec3(i & 1, (i >> 1) & 1, i >> 2);
+		ivec3 voxel = first + corner;
+		if (rt_fog_world_grid_in_grid(voxel)) {
+			extinction += rt_fog_world_grid_corner_weight(corner, weight) * rt_fog_world_grid_extinction_at_voxel(voxel);
+		}
+	}
+	return extinction;
+}
+
+// The medium at p_world, interpolated as rt_fog_world_grid_extinction(): the extinction, scattering and emission each,
+// so the albedo is the extinction-weighted mix. Outside the grid, or without one, there is none.
 RTFogWorldGridSample rt_fog_world_grid_sample(vec3 p_world) {
 	RTFogWorldGridSample s;
 	s.extinction = 0.0;
@@ -130,11 +168,23 @@ RTFogWorldGridSample rt_fog_world_grid_sample(vec3 p_world) {
 	if (!rt_fog_world_grid_enabled()) {
 		return s;
 	}
-	ivec3 voxel = ivec3(floor((p_world - rt_fog_world_grid_origin()) / get_rt_param(RT_PARAM_FOG_WORLD_GRID_VOXEL_SIZE)));
-	if (any(lessThan(voxel, ivec3(0))) || any(greaterThanEqual(voxel, rt_fog_world_grid_size()))) {
-		return s;
+	vec3 weight;
+	ivec3 first = rt_fog_world_grid_corner(p_world, weight);
+	vec3 scattering = vec3(0.0);
+	for (int i = 0; i < 8; i++) {
+		ivec3 corner = ivec3(i & 1, (i >> 1) & 1, i >> 2);
+		ivec3 voxel = first + corner;
+		if (!rt_fog_world_grid_in_grid(voxel)) {
+			continue;
+		}
+		float w = rt_fog_world_grid_corner_weight(corner, weight);
+		RTFogWorldGridSample v = rt_fog_world_grid_sample_voxel(voxel);
+		s.extinction += w * v.extinction;
+		scattering += w * v.albedo * v.extinction;
+		s.emission += w * v.emission;
 	}
-	return rt_fog_world_grid_sample_voxel(voxel);
+	s.albedo = s.extinction > 0.0 ? clamp(scattering / s.extinction, vec3(0.0), vec3(1.0)) : vec3(0.0);
+	return s;
 }
 
 // The global fog, the same everywhere inside it.
@@ -219,21 +269,19 @@ float rt_fog_world_grid_optical_depth(vec3 p_origin, vec3 p_dir, float p_t_max) 
 
 // Tracks a ray from p_origin along the unit p_dir up to p_t_max meters through the occupied part of the grid, sampling
 // tentative collisions against each brick's highest extinction, so clear bricks cost one fetch and thin ones few steps.
-// Delta tracking (p_ratio false) stops at the first real collision: r_collided is then true, r_t its distance and
-// r_voxel the voxel it happened in (the one whose extinction was tested). Ratio tracking (p_ratio true) walks the whole
+// Delta tracking (p_ratio false) stops at the first real collision: r_collided is then true and r_t its distance, where
+// the medium is the interpolated one (rt_fog_world_grid_sample()). Ratio tracking (p_ratio true) walks the whole
 // ray. The return value is the weight of the walk, at most 1: for delta tracking 1, for ratio tracking the
 // transmittance estimate, and 0 when the safety cap or ratio tracking's Russian roulette ended the walk. Both
 // estimators are unbiased but for the safety cap, which absorbs the walks that reach it
 // (RT_FOG_WORLD_GRID_MAX_COLLISIONS). r_collisions counts the tentative collisions tested.
-float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_ratio, inout uint r_rng, out bool r_collided, out float r_t, out ivec3 r_voxel, out int r_collisions) {
+float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_ratio, inout uint r_rng, out bool r_collided, out float r_t, out int r_collisions) {
 	r_collided = false;
 	r_t = p_t_max;
-	r_voxel = ivec3(0);
 	r_collisions = 0;
 	float voxel_size = get_rt_param(RT_PARAM_FOG_WORLD_GRID_VOXEL_SIZE);
 	float brick_size = voxel_size * RT_FOG_WORLD_GRID_BRICK_SIZE;
 	ivec3 brick_count = textureSize(usampler3D(rt_fog_world_grid_majorant, SAMPLER_NEAREST_CLAMP), 0);
-	ivec3 grid_size = rt_fog_world_grid_size();
 	vec3 grid_origin = rt_fog_world_grid_origin();
 
 	// Positions in brick units from here on; s is the distance in brick sizes, t in meters.
@@ -262,9 +310,6 @@ float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_r
 		float s_exit = min(min(min(s_next.x, s_next.y), s_next.z), s_end);
 		float majorant = rt_fog_world_grid_unpack(texelFetch(usampler3D(rt_fog_world_grid_majorant, SAMPLER_NEAREST_CLAMP), brick, 0).x);
 		if (majorant > 0.0) {
-			// The voxels this brick's majorant was taken over; a point on its faces is clamped back into them.
-			ivec3 voxel_first = brick * int(RT_FOG_WORLD_GRID_BRICK_SIZE);
-			ivec3 voxel_last = min(voxel_first + int(RT_FOG_WORLD_GRID_BRICK_SIZE) - 1, grid_size - 1);
 			float t = s * brick_size;
 			float t_exit = s_exit * brick_size;
 			while (true) {
@@ -276,13 +321,11 @@ float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_r
 				if (r_collisions >= RT_FOG_WORLD_GRID_MAX_COLLISIONS) {
 					return 0.0;
 				}
-				ivec3 voxel = clamp(ivec3(floor((p_origin + p_dir * t - grid_origin) / voxel_size)), voxel_first, voxel_last);
-				float ratio = rt_fog_world_grid_extinction_at_voxel(voxel) / majorant;
+				float ratio = min(rt_fog_world_grid_extinction(p_origin + p_dir * t) / majorant, 1.0);
 				if (!p_ratio) {
 					if (rand(r_rng) < ratio) {
 						r_collided = true;
 						r_t = t;
-						r_voxel = voxel;
 						return weight;
 					}
 				} else {
@@ -319,20 +362,18 @@ float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_r
 }
 
 // Samples the first real collision with the medium along a ray, see rt_fog_world_grid_track(): r_collided says whether
-// there is one, r_t where and r_voxel in which voxel. Returns the weight to multiply the path's throughput with, 0 when
-// the walk was ended.
-float rt_fog_world_grid_free_flight(vec3 p_origin, vec3 p_dir, float p_t_max, inout uint r_rng, out bool r_collided, out float r_t, out ivec3 r_voxel) {
+// there is one and r_t where. Returns the weight to multiply the path's throughput with, 0 when the walk was ended.
+float rt_fog_world_grid_free_flight(vec3 p_origin, vec3 p_dir, float p_t_max, inout uint r_rng, out bool r_collided, out float r_t) {
 	int collisions;
-	return rt_fog_world_grid_track(p_origin, p_dir, p_t_max, false, r_rng, r_collided, r_t, r_voxel, collisions);
+	return rt_fog_world_grid_track(p_origin, p_dir, p_t_max, false, r_rng, r_collided, r_t, collisions);
 }
 
 // Transmittance of the medium along a ray, estimated by ratio tracking (see rt_fog_world_grid_track()).
 float rt_fog_world_grid_transmittance(vec3 p_origin, vec3 p_dir, float p_t_max, inout uint r_rng) {
 	bool collided;
 	float t;
-	ivec3 voxel;
 	int collisions;
-	return rt_fog_world_grid_track(p_origin, p_dir, p_t_max, true, r_rng, collided, t, voxel, collisions);
+	return rt_fog_world_grid_track(p_origin, p_dir, p_t_max, true, r_rng, collided, t, collisions);
 }
 
 // The whole medium at p_world: the grid's FogVolumes and the global fog added up.
@@ -360,9 +401,8 @@ float rt_medium_free_flight(vec3 p_origin, vec3 p_dir, float p_t_max, inout uint
 	r_medium.albedo = vec3(0.0);
 	r_medium.emission = vec3(0.0);
 	float weight = 1.0;
-	ivec3 voxel = ivec3(0);
 	if (rt_fog_world_grid_transport_enabled()) {
-		weight = rt_fog_world_grid_free_flight(p_origin, p_dir, p_t_max, r_rng, r_collided, r_t, voxel);
+		weight = rt_fog_world_grid_free_flight(p_origin, p_dir, p_t_max, r_rng, r_collided, r_t);
 	}
 	vec2 global_part = rt_fog_global_interval(p_origin, p_dir, p_t_max);
 	if (global_part.x < global_part.y) {
@@ -375,7 +415,7 @@ float rt_medium_free_flight(vec3 p_origin, vec3 p_dir, float p_t_max, inout uint
 		}
 	}
 	if (r_collided) {
-		r_medium = rt_fog_world_grid_sample_voxel(voxel);
+		r_medium = rt_fog_world_grid_sample(p_origin + p_dir * r_t);
 	}
 	return weight;
 }
@@ -548,9 +588,8 @@ vec3 rt_fog_world_grid_collisions_debug(vec3 p_origin, vec3 p_dir, float p_t, in
 	float dir_length = length(p_dir);
 	bool collided;
 	float t;
-	ivec3 voxel;
 	int collisions;
-	rt_fog_world_grid_track(p_origin, p_dir / dir_length, p_t * dir_length, true, r_rng, collided, t, voxel, collisions);
+	rt_fog_world_grid_track(p_origin, p_dir / dir_length, p_t * dir_length, true, r_rng, collided, t, collisions);
 	if (collisions >= RT_FOG_WORLD_GRID_MAX_COLLISIONS) {
 		return vec3(1.0);
 	}
