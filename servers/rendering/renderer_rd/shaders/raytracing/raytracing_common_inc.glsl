@@ -122,7 +122,9 @@ void dlss_rr_write_albedo_guides(vec3 p_diffuse, vec3 p_specular) {
 // Samplers occupy 16-27 (see raytracing_samplers_inc.glsl); velocity sits at
 // the first free slot past them so we do not collide with either.
 layout(set = 0, binding = 28, rg16f) uniform image2D rt_velocity_image;
-layout(set = 0, binding = 15, r32f) uniform image2D rt_depth_image;
+// Coherent: the raygen reads back what the hit and miss shaders of its own trace wrote (rt_write_guide_depth()), and
+// the Vulkan memory model only makes a callee's stores visible to its caller through coherent memory.
+layout(set = 0, binding = 15, r32f) uniform coherent image2D rt_depth_image;
 
 #ifdef DLSS_RR_ENABLED
 // Reflection through a plane with unit normal p_n; the sign of p_n does not matter.
