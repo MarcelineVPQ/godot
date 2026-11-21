@@ -110,6 +110,17 @@ class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 		bool validation = false;
 	};
 
+	// VK_NV_cluster_acceleration_structure.
+	struct ClusterAccelerationStructureCapabilities {
+		bool support = false;
+		uint32_t max_vertices_per_cluster = 0;
+		uint32_t max_triangles_per_cluster = 0;
+		uint32_t scratch_alignment = 0;
+		uint32_t cluster_alignment = 0;
+		uint32_t bottom_level_alignment = 0;
+		uint32_t max_geometry_index = 0;
+	};
+
 	struct DescriptorIndexingCapabilities {
 		bool shader_sampled_image_array_non_uniform_indexing = false;
 		bool descriptor_binding_partially_bound = false;
@@ -143,6 +154,8 @@ class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 		PFN_vkCreateRayTracingPipelinesKHR CreateRaytracingPipelinesKHR = nullptr;
 		PFN_vkGetRayTracingShaderGroupHandlesKHR GetRayTracingShaderGroupHandlesKHR = nullptr;
 		PFN_vkCmdTraceRaysKHR CmdTraceRaysKHR = nullptr;
+		PFN_vkGetClusterAccelerationStructureBuildSizesNV GetClusterAccelerationStructureBuildSizesNV = nullptr;
+		PFN_vkCmdBuildClusterAccelerationStructureIndirectNV CmdBuildClusterAccelerationStructureIndirectNV = nullptr;
 	};
 	// Debug marker extensions.
 	VkDebugReportObjectTypeEXT _convert_to_debug_report_objectType(VkObjectType p_object_type);
@@ -174,6 +187,7 @@ class RenderingDeviceDriverVulkan : public RenderingDeviceDriver {
 	AccelerationStructureCapabilities acceleration_structure_capabilities;
 	bool ray_query_support = false;
 	RaytracingCapabilities raytracing_capabilities;
+	ClusterAccelerationStructureCapabilities cluster_acceleration_structure_capabilities;
 	DescriptorIndexingCapabilities descriptor_indexing_capabilities;
 	bool pipeline_cache_control_support = false;
 	bool device_fault_support = false;
@@ -714,6 +728,19 @@ public:
 
 	// ----- ACCELERATION STRUCTURE -----
 
+	// Both builds of a BLAS made from clusters: one cluster acceleration structure per cluster (implicit
+	// destinations, their addresses written to `address_buffer`), then the BLAS over them at a fixed address.
+	struct ClusterBuild {
+		VkClusterAccelerationStructureTriangleClusterInputNV triangle_input = {};
+		VkClusterAccelerationStructureClustersBottomLevelInputNV bottom_level_input = {};
+		VkClusterAccelerationStructureCommandsInfoNV cluster_commands = {};
+		VkClusterAccelerationStructureCommandsInfoNV bottom_level_commands = {};
+		// CPU visible: the build infos of the clusters, the build info of the BLAS and the BLAS address.
+		RDD::BufferID input_buffer;
+		// The addresses of the built clusters, read by the BLAS build.
+		RDD::BufferID address_buffer;
+	};
+
 	struct AccelerationStructureInfo {
 		VkAccelerationStructureKHR vk_acceleration_structure = VK_NULL_HANDLE;
 		// Buffer used for the structure
@@ -729,9 +756,13 @@ public:
 		TightLocalVector<VkAccelerationStructureGeometryKHR> geometries;
 		VkAccelerationStructureBuildGeometryInfoKHR build_info;
 		TightLocalVector<VkAccelerationStructureBuildRangeInfoKHR> range_infos;
+
+		// Set for a BLAS built from clusters; `buffer` then holds the clusters followed by the BLAS.
+		ClusterBuild *cluster_build = nullptr;
 	};
 
 	virtual AccelerationStructureID blas_create(VectorView<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags) override final;
+	virtual AccelerationStructureID blas_create_from_clusters(BufferID p_vertex_buffer, BufferID p_index_buffer, VectorView<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) override final;
 	virtual AccelerationStructureID tlas_create(uint32_t p_max_instance_count, BitField<AccelerationStructureFlagBits> p_flags) override final;
 	virtual void acceleration_structure_instance_write(uint8_t *r_driver_instance, const AccelerationStructureInstance &p_instance) override final;
 	virtual void acceleration_structure_free(AccelerationStructureID p_acceleration_structure) override final;

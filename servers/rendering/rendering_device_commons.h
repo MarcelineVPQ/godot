@@ -935,6 +935,16 @@ public:
 		ACCELERATION_STRUCTURE_INSTANCE_FORCE_NO_OPAQUE_BIT = (1 << 3),
 	};
 
+	// One cluster of a BLAS built from clusters (SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE): a small triangle list over
+	// its own vertices, at most 256 of each. Vertices are three floats each; indices are one byte, local to the cluster.
+	struct AccelerationStructureCluster {
+		uint32_t geometry_index = 0; // Reported to shaders as the geometry index of the cluster's triangles.
+		uint32_t triangle_count = 0;
+		uint32_t vertex_count = 0;
+		uint32_t first_triangle = 0; // In the index buffer, three indices per triangle.
+		uint32_t first_vertex = 0; // In the vertex buffer.
+	};
+
 	/**************/
 	/**** MISC ****/
 	/**************/
@@ -1040,6 +1050,7 @@ public:
 		SUPPORTS_HDR_OUTPUT,
 		SUPPORTS_SHADER_DEVICE_CLOCK,
 		SUPPORTS_VERTEX_PIPELINE_STORES,
+		SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE,
 	};
 
 	enum SubgroupOperations {

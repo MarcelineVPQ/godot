@@ -3262,6 +3262,10 @@
 		<member name="rendering/pathtracing/async_shader_compilation" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], path tracing ray hit shaders are compiled asynchronously in the background. This avoids frame stalls when new shader variants are first encountered during rendering. While a shader is compiling, a fallback shader may be used, which can cause temporary visual artifacts. Disable this if you require fully deterministic rendering from the first frame at the cost of potential stalls on shader warm-up.
 		</member>
+		<member name="rendering/pathtracing/cluster_geometry/enabled" type="bool" setter="" getter="" default="false">
+			If [code]true[/code], the path tracer traces static mesh surfaces that have clusters (see [method ImporterMesh.generate_clusters] and the [code]generate/clusters[/code] mesh import option) through cluster acceleration structures, built from the finest clusters. Other surfaces, and skinned, blend shape and vertex captured ones, are traced as before.
+			Requires a GPU and driver with [code]VK_NV_cluster_acceleration_structure[/code] (NVIDIA RTX). Without it, every surface is traced as before. Takes effect after a restart, as it decides how the rendering device is set up.
+		</member>
 		<member name="rendering/pathtracing/debug_heatmap_max_ticks" type="float" setter="" getter="" default="100000.0">
 			Elapsed device clock ticks mapped to purple in [constant Environment.RT_DEBUG_TIMING_HEATMAP]. Zero ticks map to green, with cyan halfway through the range. Larger durations saturate at purple. Adjust this to the scene and GPU; Vulkan does not define a portable clock period for shader clocks. Measures all samples per pixel together.
 		</member>

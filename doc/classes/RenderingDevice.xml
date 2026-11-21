@@ -2861,6 +2861,9 @@
 		<constant name="SUPPORTS_VERTEX_PIPELINE_STORES" value="15" enum="Features">
 			Support for storage buffer writes from vertex shaders. On Vulkan, requires the [code]vertexPipelineStoresAndAtomics[/code] feature.
 		</constant>
+		<constant name="SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE" value="16" enum="Features">
+			Support for bottom-level acceleration structures built from clusters of up to 256 triangles. On Vulkan, requires [code]VK_NV_cluster_acceleration_structure[/code], which is only requested when [member ProjectSettings.rendering/pathtracing/cluster_geometry/enabled] is on.
+		</constant>
 		<constant name="LIMIT_MAX_BOUND_UNIFORM_SETS" value="0" enum="Limit">
 			Maximum number of uniform sets that can be bound at a given time.
 		</constant>

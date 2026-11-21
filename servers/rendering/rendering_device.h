@@ -1357,6 +1357,7 @@ private:
 		// --- Bottom Level ---
 		Vector<RDG::ResourceTracker *> draw_trackers;
 		HashSet<RID> untracked_buffers;
+		bool from_clusters = false; // Built by blas_create_from_clusters(); can't be refit.
 
 		// --- Top Level ---
 		uint32_t max_instance_count = 0;
@@ -1446,6 +1447,10 @@ public:
 	};
 
 	RID blas_create(Span<AccelerationStructureGeometry> p_geometries, BitField<AccelerationStructureFlagBits> p_flags);
+	// A BLAS built from clusters, see AccelerationStructureCluster. Needs SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE.
+	// The buffers are storage buffers with device addresses: float3 positions and uint8 indices. Its builds build every
+	// cluster again; blas_update() isn't supported and acceleration_structure_build_batch() turns refits into builds.
+	RID blas_create_from_clusters(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags);
 	RID tlas_create(uint32_t p_max_instance_count, BitField<AccelerationStructureFlagBits> p_flags);
 	bool acceleration_structure_is_valid(RID p_acceleration_structure);
 

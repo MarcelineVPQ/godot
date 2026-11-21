@@ -492,6 +492,52 @@ RID RenderingDevice::blas_create(Span<AccelerationStructureGeometry> p_geometrie
 	return id;
 }
 
+RID RenderingDevice::blas_create_from_clusters(RID p_vertex_buffer, RID p_index_buffer, Span<AccelerationStructureCluster> p_clusters, BitField<AccelerationStructureGeometryFlagBits> p_geometry_flags, BitField<AccelerationStructureFlagBits> p_flags) {
+	ERR_FAIL_COND_V_MSG(!has_feature(SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE), RID(), "The current rendering device doesn't support cluster acceleration structures.");
+	ERR_FAIL_COND_V(p_clusters.is_empty(), RID());
+
+	Buffer *vertex_buffer = storage_buffer_owner.get_or_null(p_vertex_buffer);
+	ERR_FAIL_NULL_V_MSG(vertex_buffer, RID(), "The vertex buffer must be a valid storage buffer.");
+	Buffer *index_buffer = storage_buffer_owner.get_or_null(p_index_buffer);
+	ERR_FAIL_NULL_V_MSG(index_buffer, RID(), "The index buffer must be a valid storage buffer.");
+	for (const AccelerationStructureCluster &cluster : p_clusters) {
+		ERR_FAIL_COND_V_MSG((uint64_t(cluster.first_vertex) + cluster.vertex_count) * sizeof(float) * 3 > vertex_buffer->size, RID(), "A cluster's vertices are outside the range of the vertex buffer.");
+		ERR_FAIL_COND_V_MSG((uint64_t(cluster.first_triangle) + cluster.triangle_count) * 3 > index_buffer->size, RID(), "A cluster's triangles are outside the range of the index buffer.");
+	}
+
+	Vector<RDG::ResourceTracker *> draw_trackers;
+	HashSet<RID> untracked_buffers;
+	for (const RID &rid : { p_vertex_buffer, p_index_buffer }) {
+		Buffer *buffer = storage_buffer_owner.get_or_null(rid);
+		if (buffer->draw_tracker != nullptr) {
+			draw_trackers.push_back(buffer->draw_tracker);
+		} else {
+			untracked_buffers.insert(rid);
+		}
+		_check_transfer_worker_buffer(buffer);
+	}
+
+	AccelerationStructure acceleration_structure;
+	acceleration_structure.type = RDD::ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
+	acceleration_structure.from_clusters = true;
+	acceleration_structure.driver_id = driver->blas_create_from_clusters(vertex_buffer->driver_id, index_buffer->driver_id, VectorView<AccelerationStructureCluster>(p_clusters.ptr(), p_clusters.size()), p_geometry_flags, p_flags);
+	ERR_FAIL_COND_V_MSG(!acceleration_structure.driver_id, RID(), "Failed to create BLAS from clusters.");
+
+	acceleration_structure.draw_tracker = RDG::resource_tracker_create();
+	acceleration_structure.draw_tracker->acceleration_structure_driver_id = acceleration_structure.driver_id;
+	acceleration_structure.draw_tracker->usage = RDG::RESOURCE_USAGE_ACCELERATION_STRUCTURE_READ_WRITE;
+	acceleration_structure.draw_trackers = std::move(draw_trackers);
+	acceleration_structure.untracked_buffers = std::move(untracked_buffers);
+
+	RID id = acceleration_structure_owner.make_rid(acceleration_structure);
+#ifdef DEV_ENABLED
+	set_resource_name(id, "RID:" + itos(id.get_id()));
+#endif
+	_add_dependency(id, p_vertex_buffer);
+	_add_dependency(id, p_index_buffer);
+	return id;
+}
+
 BitField<RDD::BufferUsageBits> RenderingDevice::_creation_to_usage_bits(BitField<RD::BufferCreationBits> p_creation_bits) {
 	BitField<RDD::BufferUsageBits> usage = 0;
 
@@ -574,6 +620,7 @@ Error RenderingDevice::blas_update(RID p_blas) {
 	ERR_FAIL_NULL_V_MSG(blas, ERR_INVALID_PARAMETER, "BLAS argument is not valid.");
 	// A refit reads the previous build; refitting a BLAS that never built would traverse uninitialized memory.
 	ERR_FAIL_COND_V_MSG(blas->invalidated, ERR_INVALID_PARAMETER, "BLAS has never been built; build it before updating it.");
+	ERR_FAIL_COND_V_MSG(blas->from_clusters, ERR_INVALID_PARAMETER, "A BLAS built from clusters can't be refit; build it instead.");
 
 	Error err = _acceleration_structure_scratch_buffer_create(blas);
 	ERR_FAIL_COND_V(err != OK, err);
@@ -812,8 +859,8 @@ Error RenderingDevice::_blas_batch_add(RID p_blas, bool p_refit) {
 	// The builds of a batch run concurrently, so a second build of the same BLAS would race the first.
 	ERR_FAIL_COND_V_MSG(blas->build_serial == acceleration_structure_build_serial, ERR_INVALID_PARAMETER, "BLAS appears more than once in the batch.");
 
-	// A refit reads the previous build, which a BLAS that never built doesn't have.
-	const bool refit = p_refit && !blas->invalidated;
+	// A refit reads the previous build, which a BLAS that never built doesn't have. Cluster BLASes can't be refit.
+	const bool refit = p_refit && !blas->invalidated && !blas->from_clusters;
 	RDG::RecordedAccelerationStructureBuild build;
 	build.type = refit ? RDG::RecordedAccelerationStructureBuild::TYPE_BLAS_UPDATE : RDG::RecordedAccelerationStructureBuild::TYPE_BLAS_BUILD;
 	build.acceleration_structure = blas->driver_id;
@@ -10222,6 +10269,7 @@ void RenderingDevice::_bind_methods() {
 	BIND_ENUM_CONSTANT(SUPPORTS_HDR_OUTPUT);
 	BIND_ENUM_CONSTANT(SUPPORTS_SHADER_DEVICE_CLOCK);
 	BIND_ENUM_CONSTANT(SUPPORTS_VERTEX_PIPELINE_STORES);
+	BIND_ENUM_CONSTANT(SUPPORTS_CLUSTER_ACCELERATION_STRUCTURE);
 
 	BIND_ENUM_CONSTANT(LIMIT_MAX_BOUND_UNIFORM_SETS);
 	BIND_ENUM_CONSTANT(LIMIT_MAX_FRAMEBUFFER_COLOR_ATTACHMENTS);
