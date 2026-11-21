@@ -133,9 +133,10 @@ TEST_FORCE_LINK(test_shader_rd_variants)
 // passes with the engine's default project settings. A shader that fails here fails at run time too, often in a
 // variant that a validation run never reaches. Run it after any change to a .glsl file:
 //   bin/godot.<platform>.editor.<arch> --test --test-case="*ShaderRD*"
-// When a renderer class gains a shader or a variant, add it here. Not covered: user material code (compiled from the
-// material at run time; these compile the templates with empty code), giprobe_write.glsl and voxel_gi_sdf.glsl (no
-// renderer class uses them).
+// When a renderer class gains a shader or a variant, add it here; misc/scripts/check_shader_rd_variants.py fails
+// until every shader class and define of the renderer appears in this file. Not covered: user material code (compiled
+// from the material at run time; these compile the templates with empty code), giprobe_write.glsl and
+// voxel_gi_sdf.glsl (no renderer class uses them).
 namespace TestShaderRDVariants {
 
 struct Failure {
@@ -396,7 +397,7 @@ static void check_environment() {
 	check<VolumetricFogShaderRD>("volumetric_fog", fog_modes, "#define SAMPLERS_BINDING_FIRST_INDEX 3\n");
 	// Devices that add floats atomically in images sum the world grid's emission as floats.
 	check<VolumetricFogShaderRD>("volumetric_fog (float emission)", fog_modes, "#define SAMPLERS_BINDING_FIRST_INDEX 3\n#define WORLD_GRID_FLOAT_EMISSION\n");
-	const String process_defines = "\n#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS 8\n" + roughness_defines.replace("MAX_ROUGHNESS_LOD", "MAX_SKY_LOD");
+	const String process_defines = "\n#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS 8\n\n#define MAX_SKY_LOD 7.0\n\n#define USE_RADIANCE_OCTMAP_ARRAY \n";
 	Vector<String> process_modes;
 	Vector<String> ray_query_modes;
 	for (int i = 0; i < RendererRD::Fog::get_process_shader_group_count(); i++) {
@@ -498,6 +499,10 @@ static void check_scene() {
 	}
 	clustered_modes.push_back("\n#define MODE_RENDER_DEPTH\n#define MODE_RT_CAPTURE\n#define NORMAL_USED\n#define TANGENT_USED\n");
 	check<SceneForwardClusteredShaderRD>("scene_forward_clustered", clustered_modes, scene_defines(true));
+	// The project settings off their defaults: rendering/shading/overrides/force_vertex_shading on and
+	// rendering/reflections/specular_occlusion/enabled off.
+	const String optional_scene_defines = "\n#define USE_VERTEX_LIGHTING\n\n#define SPECULAR_OCCLUSION_DISABLED\n";
+	check<SceneForwardClusteredShaderRD>("scene_forward_clustered (vertex shading, no specular occlusion)", clustered_modes, scene_defines(true) + optional_scene_defines);
 
 	// SceneShaderForwardMobile.
 	Vector<String> mobile_modes;
@@ -516,6 +521,7 @@ static void check_scene() {
 		}
 	}
 	check<SceneForwardMobileShaderRD>("scene_forward_mobile", mobile_modes, scene_defines(false));
+	check<SceneForwardMobileShaderRD>("scene_forward_mobile (vertex shading, no specular occlusion)", mobile_modes, scene_defines(false) + optional_scene_defines);
 
 	// RenderForwardClustered's own passes.
 	check<OitResolveShaderRD>("oit_resolve", { "\n" });
