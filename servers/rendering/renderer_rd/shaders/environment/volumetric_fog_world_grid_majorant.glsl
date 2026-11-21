@@ -6,7 +6,7 @@
 
 // Highest density of each brick of the path tracer's fog world grid, so its tracking can skip clear space.
 
-#define BRICK_SIZE 8
+#define BRICK_SIZE 4
 
 layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
 

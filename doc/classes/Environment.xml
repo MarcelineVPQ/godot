@@ -591,7 +591,7 @@
 			Like [constant RT_DEBUG_CLUSTER_TRIANGLES], with one random color per cluster group: the clusters simplified together into the next level of detail.
 		</constant>
 		<constant name="RT_DEBUG_VOLUMETRIC_FOG_COLLISIONS" value="34" enum="PathtracingDebugMode">
-			Displays how much work tracing light through the [FogVolume]s of the path tracer's world grid takes on the primary ray up to its first hit: the tentative collisions a shadow ray tests there, from blue (none) through green to red at 64, past which Russian roulette may end the walk. White means the walk hit the safety cap of 4096 tentative collisions and was absorbed, which darkens the fog there. Needs [member ProjectSettings.rendering/pathtracing/volumetric_fog_world_grid_transport]; without it, everything is blue. Magenta means no grid is bound: path tracing or [member volumetric_fog_enabled] is off.
+			Displays how much work tracing light through the [FogVolume]s of the path tracer's world grid takes on the primary ray up to its first hit: the tentative collisions a shadow ray tests there, from blue (none) through green to red at 64 or more. White means the walk hit the safety cap of 4096 tentative collisions and was absorbed, which darkens the fog there. Needs [member ProjectSettings.rendering/pathtracing/volumetric_fog_world_grid_transport]; without it, everything is blue. Magenta means no grid is bound: path tracing or [member volumetric_fog_enabled] is off.
 		</constant>
 		<constant name="FOG_MODE_EXPONENTIAL" value="0" enum="FogMode">
 			Use a physically-based fog model defined primarily by fog density.

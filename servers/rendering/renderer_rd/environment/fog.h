@@ -379,7 +379,7 @@ public:
 		GDCLASS(VolumetricFogWorldGrid, RenderBufferCustomDataRD)
 
 	public:
-		static constexpr int WORLD_GRID_BRICK_SIZE = 8; // Must match BRICK_SIZE in volumetric_fog_world_grid_majorant.glsl.
+		static constexpr int WORLD_GRID_BRICK_SIZE = 4; // Must match BRICK_SIZE in volumetric_fog_world_grid_majorant.glsl.
 
 		Vector3i size;
 		float voxel_size = 0.0;

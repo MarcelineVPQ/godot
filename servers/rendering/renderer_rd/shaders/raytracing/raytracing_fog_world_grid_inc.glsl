@@ -12,13 +12,13 @@ layout(set = 0, binding = 45) uniform utexture3D rt_fog_world_grid_majorant;
 
 // Must match DENSITY_SCALE of MODE_WORLD_GRID in volumetric_fog.glsl.
 #define RT_FOG_WORLD_GRID_SCALE 16384.0
-#define RT_FOG_WORLD_GRID_BRICK_SIZE 8.0
-// Tentative collisions a tracked ray tests freely. Past them, each one ends the walk with probability
-// RT_FOG_WORLD_GRID_ROULETTE_END and the walks that go on weigh that much more (Russian roulette, no bias).
-#define RT_FOG_WORLD_GRID_ROULETTE_COLLISIONS 64
-#define RT_FOG_WORLD_GRID_ROULETTE_END 0.1
-// Safety cap: a walk that reaches it is absorbed. After the roulette above, that takes odds of 0.9^4032.
+// Small bricks keep each majorant close to the densities under it, so a ray through thin fog next to a dense core
+// tests few tentative collisions.
+#define RT_FOG_WORLD_GRID_BRICK_SIZE 4.0
+// Safety cap: a walk that reaches it is absorbed, which darkens it (the collisions debug view shows these in white).
 #define RT_FOG_WORLD_GRID_MAX_COLLISIONS 4096
+// Tentative collisions shown in red by the collisions debug view.
+#define RT_FOG_WORLD_GRID_DEBUG_COLLISIONS 64
 
 struct RTFogWorldGridSample {
 	float extinction; // DENSITY, per meter.
@@ -205,9 +205,9 @@ float rt_fog_world_grid_optical_depth(vec3 p_origin, vec3 p_dir, float p_t_max) 
 // tentative collisions against each brick's highest extinction, so clear bricks cost one fetch and thin ones few steps.
 // Delta tracking (p_ratio false) stops at the first real collision: r_collided is then true, r_t its distance and
 // r_voxel the voxel it happened in (the one whose extinction was tested). Ratio tracking (p_ratio true) walks the whole
-// ray. The return value is the weight of the walk, which Russian roulette past RT_FOG_WORLD_GRID_ROULETTE_COLLISIONS
-// raises, or 0 when roulette or the safety cap ended it; for ratio tracking it includes the transmittance estimate.
-// Both estimators are unbiased but for the safety cap, which absorbs the walks that reach it
+// ray. The return value is the weight of the walk, at most 1: for delta tracking 1, for ratio tracking the
+// transmittance estimate, and 0 when the safety cap or ratio tracking's Russian roulette ended the walk. Both
+// estimators are unbiased but for the safety cap, which absorbs the walks that reach it
 // (RT_FOG_WORLD_GRID_MAX_COLLISIONS). r_collisions counts the tentative collisions tested.
 float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_ratio, inout uint r_rng, out bool r_collided, out float r_t, out ivec3 r_voxel, out int r_collisions) {
 	r_collided = false;
@@ -259,12 +259,6 @@ float rt_fog_world_grid_track(vec3 p_origin, vec3 p_dir, float p_t_max, bool p_r
 				r_collisions++;
 				if (r_collisions >= RT_FOG_WORLD_GRID_MAX_COLLISIONS) {
 					return 0.0;
-				}
-				if (r_collisions > RT_FOG_WORLD_GRID_ROULETTE_COLLISIONS) {
-					if (rand(r_rng) < RT_FOG_WORLD_GRID_ROULETTE_END) {
-						return 0.0;
-					}
-					weight /= 1.0 - RT_FOG_WORLD_GRID_ROULETTE_END;
 				}
 				ivec3 voxel = clamp(ivec3(floor((p_origin + p_dir * t - grid_origin) / voxel_size)), voxel_first, voxel_last);
 				float ratio = rt_fog_world_grid_extinction_at_voxel(voxel) / majorant;
@@ -529,8 +523,8 @@ vec3 rt_fog_world_grid_debug(vec3 p_origin, vec3 p_dir, float p_t) {
 }
 
 // Tentative collisions the tracking of a shadow ray tests along a ray up to p_t (in units of p_dir): blue for none,
-// through green to red at RT_FOG_WORLD_GRID_ROULETTE_COLLISIONS, where Russian roulette starts; white where the safety
-// cap absorbed the walk. Magenta means no grid is bound.
+// through green to red at RT_FOG_WORLD_GRID_DEBUG_COLLISIONS or more; white where the safety cap absorbed the walk.
+// Magenta means no grid is bound.
 vec3 rt_fog_world_grid_collisions_debug(vec3 p_origin, vec3 p_dir, float p_t, inout uint r_rng) {
 	if (!rt_fog_world_grid_enabled()) {
 		return vec3(1.0, 0.0, 1.0);
@@ -544,5 +538,5 @@ vec3 rt_fog_world_grid_collisions_debug(vec3 p_origin, vec3 p_dir, float p_t, in
 	if (collisions >= RT_FOG_WORLD_GRID_MAX_COLLISIONS) {
 		return vec3(1.0);
 	}
-	return debug_heat_color(float(collisions) / float(RT_FOG_WORLD_GRID_ROULETTE_COLLISIONS));
+	return debug_heat_color(float(collisions) / float(RT_FOG_WORLD_GRID_DEBUG_COLLISIONS));
 }
