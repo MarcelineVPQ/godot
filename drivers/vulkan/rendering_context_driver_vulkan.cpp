@@ -474,7 +474,7 @@ Error RenderingContextDriverVulkan::_initialize_instance_extensions() {
 	}
 
 #ifdef NGX_ENABLED
-	// DLSS Ray Reconstruction (NGX) needs these once the GPU turns out to be NVIDIA. The GPU is not
+	// DLSS (NGX) needs these once the GPU turns out to be NVIDIA. The GPU is not
 	// known yet, so they are optional: only those the loader offers get enabled.
 	LocalVector<CharString> ngx_extensions;
 	NGXContext::get().get_vulkan_instance_extensions(ngx_extensions);

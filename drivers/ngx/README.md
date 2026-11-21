@@ -1,8 +1,9 @@
-# NVIDIA NGX (DLSS Ray Reconstruction on Linux)
+# NVIDIA NGX (DLSS on Linux)
 
 On Windows this fork reaches DLSS through NVIDIA Streamline (`drivers/streamline`). Streamline
-does not support Linux, so on Linux the path tracer's DLSS Ray Reconstruction denoiser talks to
-the NVIDIA NGX SDK directly, through Vulkan. Windows builds are unchanged.
+does not support Linux, so on Linux DLSS talks to the NVIDIA NGX SDK directly, through Vulkan:
+DLSS Super Resolution upscales rasterized frames, and DLSS Ray Reconstruction denoises and
+upscales the path tracer's. Windows builds are unchanged.
 
 ## How it works
 
@@ -12,22 +13,26 @@ the NVIDIA NGX SDK directly, through Vulkan. Windows builds are unchanged.
   `thirdparty/ngx/`, which git ignores, and checks each file's SHA-256. If the download fails,
   the build stops and says so. `scons -c` and `--help` never download. For offline builds, put
   the files in `thirdparty/ngx/` yourself and add `fetch_ngx=no`.
-- The build links `libnvsdk_ngx.a` and copies `libnvidia-ngx-dlssd.so.310.9.16` (the Ray
-  Reconstruction library) and NVIDIA's licence, as `NVIDIA_RTX_SDK_LICENSE.txt`, into `bin/`. At
-  runtime NGX loads the library from the folder of the Godot executable.
+- The build links `libnvsdk_ngx.a` and copies `libnvidia-ngx-dlss.so.310.9.16` (Super
+  Resolution), `libnvidia-ngx-dlssd.so.310.9.16` (Ray Reconstruction) and NVIDIA's licence, as
+  `NVIDIA_RTX_SDK_LICENSE.txt`, into `bin/`. At runtime NGX loads the libraries from the folder
+  of the Godot executable.
 - Exporting for Linux copies every `libnvidia-ngx-dlss*.so*` found next to the export template,
   with `NVIDIA_RTX_SDK_LICENSE.txt`, next to the game, and writes `NVIDIA_NOTICE.txt`. So keep
   those files next to export templates built with NGX; without the library, exported games run
   without DLSS and say why.
 - `ngx_context.cpp` adds the Vulkan extensions NGX asks for, starts NGX on NVIDIA GPUs and checks
-  that Ray Reconstruction is available. If it is not (another GPU vendor, an old driver, or the
-  library missing), the path tracer runs without a denoiser and a warning says why.
+  that each feature is available. If one is not (another GPU vendor, an old driver, or its
+  library missing), it stays off and a warning says why: without Ray Reconstruction the path
+  tracer runs without a denoiser.
 - `servers/rendering/renderer_rd/effects/dlss_ngx.cpp` feeds NGX the same inputs the Streamline
-  path feeds Streamline (colour, depth, motion vectors, the four Ray Reconstruction guide buffers,
-  jitter and camera matrices).
+  path feeds Streamline: colour, depth, motion vectors and jitter, plus for Ray Reconstruction
+  the four guide buffers and the camera matrices. DLSS works out the exposure itself.
 
-To use it, set the project's 3D scaling mode to DLSS and the Environment's path tracing denoiser
-to DLSS Ray Reconstruction. Only Ray Reconstruction is offered on Linux, not plain DLSS upscaling.
+To use it, set the project's 3D scaling mode to DLSS. For the path tracer, also set the
+Environment's path tracing denoiser to DLSS Ray Reconstruction. The presets come from the same
+project settings as on Windows; Linux offers DLSS presets F, J, K, L and M and Ray
+Reconstruction presets D, E and F, the ones NGX 310.9.16 doesn't mark "do not use".
 
 ## Why the SDK is not in this repository
 

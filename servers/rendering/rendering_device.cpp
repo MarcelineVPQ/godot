@@ -8845,7 +8845,9 @@ Error RenderingDevice::initialize(RenderingContextDriver *p_context, DisplayServ
 #ifdef STREAMLINE_ENABLED
 		streamline_enabled = (StreamlineContext::get().slInit != nullptr ? " - Streamline" : "");
 #elif defined(NGX_ENABLED)
-		streamline_enabled = (NGXContext::get().is_dlssd_available() ? " - DLSS Ray Reconstruction (NGX)" : "");
+		if (NGXContext::get().is_available(NGXContext::FEATURE_SUPER_RESOLUTION) || NGXContext::get().is_available(NGXContext::FEATURE_RAY_RECONSTRUCTION)) {
+			streamline_enabled = NGXContext::get().is_available(NGXContext::FEATURE_RAY_RECONSTRUCTION) ? " - DLSS and DLSS Ray Reconstruction (NGX)" : " - DLSS (NGX)";
+		}
 #endif
 		Engine::get_singleton()->print_header(vformat("%s %s - %s%s - Using Device #%d: %s - %s", get_device_api_name(), get_device_api_version(), rendering_method, streamline_enabled, device_index, _get_device_vendor_name(device), device.name));
 	}

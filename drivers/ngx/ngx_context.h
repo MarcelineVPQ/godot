@@ -35,11 +35,17 @@
 #include "core/string/ustring.h"
 #include "core/templates/local_vector.h"
 
-// DLSS Ray Reconstruction on Linux through the NVIDIA NGX SDK (Vulkan), used where Streamline is not
-// available. Only this file's .cpp includes the SDK headers; Vulkan handles cross this API as plain
-// integers and pointers so callers need neither the SDK nor Vulkan headers.
+// DLSS on Linux through the NVIDIA NGX SDK (Vulkan), used where Streamline is not available: Super Resolution for
+// rasterized frames and Ray Reconstruction for the path tracer. Only this file's .cpp includes the SDK headers; Vulkan
+// handles cross this API as plain integers and pointers so callers need neither the SDK nor Vulkan headers.
 class NGXContext {
 public:
+	enum Feature {
+		FEATURE_SUPER_RESOLUTION, // DLSS.
+		FEATURE_RAY_RECONSTRUCTION, // DLSS-RR (DLSSD in the SDK).
+		FEATURE_COUNT,
+	};
+
 	// Same order as the quality modes Streamline's DLSSEffect tries: highest render resolution first.
 	enum Quality {
 		QUALITY_OFF = -1,
@@ -70,7 +76,7 @@ public:
 		bool read_write = false;
 	};
 
-	struct DLSSDCreateInfo {
+	struct CreateInfo {
 		uint32_t render_width = 0;
 		uint32_t render_height = 0;
 		uint32_t target_width = 0;
@@ -79,6 +85,19 @@ public:
 		char preset = '?';
 		bool depth_inverted = true;
 		bool alpha_upscaling = false; // Upscales the colour's alpha too.
+	};
+
+	struct DLSSEvaluateInfo {
+		Resource color;
+		Resource output;
+		Resource depth;
+		Resource motion_vectors;
+		float jitter_x = 0.0f;
+		float jitter_y = 0.0f;
+		float mv_scale_x = 1.0f;
+		float mv_scale_y = 1.0f;
+		float frame_time_ms = 0.0f;
+		bool reset = false;
 	};
 
 	struct DLSSDEvaluateInfo {
@@ -101,6 +120,7 @@ public:
 	};
 
 	static NGXContext &get();
+	NGXContext();
 
 	// Vulkan setup, called by the Vulkan driver (NVIDIA GPUs only for the device-level calls).
 	void get_vulkan_instance_extensions(LocalVector<CharString> &r_extensions);
@@ -108,24 +128,27 @@ public:
 	void initialize_vulkan(void *p_instance, void *p_physical_device, void *p_device, void *p_get_instance_proc_addr, void *p_get_device_proc_addr);
 	void shutdown_vulkan(void *p_device);
 
-	bool is_dlssd_available() const { return dlssd_available; }
-	// Plain-words reason shown to users when Ray Reconstruction cannot run.
-	String get_unavailable_reason() const { return unavailable_reason; }
+	bool is_available(Feature p_feature) const { return available[p_feature]; }
+	// Plain-words reason shown to users when p_feature cannot run.
+	String get_unavailable_reason(Feature p_feature) const { return unavailable_reasons[p_feature]; }
 
-	bool dlssd_get_optimal_settings(uint32_t p_target_width, uint32_t p_target_height, Quality p_quality, OptimalSettings &r_settings);
-	// Picks the quality mode whose render-size range holds the requested size, closest to its
-	// optimal size (as DLSSEffect does through Streamline).
-	Quality dlssd_find_quality(uint32_t p_target_width, uint32_t p_target_height, uint32_t p_render_width, uint32_t p_render_height);
-	// Same rule as StreamlineContext::dlss_clamp_render_size, using the Ray Reconstruction table.
-	bool dlssd_clamp_render_size(int p_target_width, int p_target_height, int &r_render_width, int &r_render_height);
+	bool get_optimal_settings(Feature p_feature, uint32_t p_target_width, uint32_t p_target_height, Quality p_quality, OptimalSettings &r_settings);
+	// Picks the quality mode of p_feature whose render-size range holds the requested size, closest to its optimal size
+	// (as DLSSEffect does through Streamline).
+	Quality find_quality(Feature p_feature, uint32_t p_target_width, uint32_t p_target_height, uint32_t p_render_width, uint32_t p_render_height);
+	// Same rule as StreamlineContext::dlss_clamp_render_size. A size either feature accepts is kept; otherwise it is
+	// clamped to Ray Reconstruction's table, or Super Resolution's when Ray Reconstruction is unavailable.
+	bool clamp_render_size(int p_target_width, int p_target_height, int &r_render_width, int &r_render_height);
 
-	// p_command_buffer is a VkCommandBuffer. Returns an NGX feature handle, or nullptr on failure.
-	void *dlssd_create(void *p_command_buffer, const DLSSDCreateInfo &p_info);
+	// p_command_buffer is a VkCommandBuffer. Return an NGX feature handle, or nullptr on failure.
+	void *dlss_create(void *p_command_buffer, const CreateInfo &p_info);
+	void *dlssd_create(void *p_command_buffer, const CreateInfo &p_info);
+	bool dlss_evaluate(void *p_command_buffer, void *p_feature, const DLSSEvaluateInfo &p_info);
 	bool dlssd_evaluate(void *p_command_buffer, void *p_feature, const DLSSDEvaluateInfo &p_info);
 	// The GPU may still be using the feature, so it is released once p_release_frame has been reached.
-	void dlssd_release(void *p_feature, uint64_t p_release_frame);
+	void feature_release(void *p_feature, uint64_t p_release_frame);
 	// Called by the Vulkan driver at the start of every frame of p_device (a VkDevice).
-	void dlssd_release_pending(void *p_device, uint64_t p_current_frame);
+	void feature_release_pending(void *p_device, uint64_t p_current_frame);
 
 private:
 	struct PendingRelease {
@@ -136,13 +159,16 @@ private:
 	void *device = nullptr; // VkDevice, set while NGX is initialized.
 	void *capability_parameters = nullptr; // NVSDK_NGX_Parameter *
 	void *feature_parameters = nullptr; // NVSDK_NGX_Parameter *
-	bool dlssd_available = false;
-	String unavailable_reason = "NVIDIA NGX was not initialized (Vulkan on an NVIDIA GPU is required).";
+	bool available[FEATURE_COUNT] = {};
+	String unavailable_reasons[FEATURE_COUNT];
 	LocalVector<PendingRelease> pending_releases;
 
 	// Kept alive for NGX, which holds on to these strings.
 	String application_data_path;
 	String library_path;
+
+	void _set_unavailable(const String &p_reason);
+	void _check_feature(Feature p_feature);
 };
 
 #endif // NGX_ENABLED

@@ -624,7 +624,7 @@ Error RenderingDeviceDriverVulkan::_initialize_device_extensions() {
 	}
 
 #ifdef NGX_ENABLED
-	// DLSS Ray Reconstruction (NGX) on NVIDIA GPUs.
+	// DLSS (NGX) on NVIDIA GPUs.
 	if (context_device.vendor == RenderingContextDriver::Vendor::VENDOR_NVIDIA) {
 		LocalVector<CharString> ngx_extensions;
 		NGXContext::get().get_vulkan_device_extensions(context_driver->instance_get(), physical_device, ngx_extensions);
@@ -7910,7 +7910,7 @@ void RenderingDeviceDriverVulkan::begin_segment(uint32_t p_frame_index, uint32_t
 	// Per-frame segments are not required in Vulkan.
 #ifdef NGX_ENABLED
 	// DLSS features are released here, so they don't wait for a viewport to upscale again.
-	NGXContext::get().dlssd_release_pending(vk_device, p_frames_drawn);
+	NGXContext::get().feature_release_pending(vk_device, p_frames_drawn);
 #endif
 }
 

@@ -649,7 +649,7 @@ if env["use_ngx"]:
         Exit(255)
 
     ngx_dir = "thirdparty/ngx"
-    ngx_dlssd_library = "libnvidia-ngx-dlssd.so.310.9.16"
+    ngx_libraries = ["libnvidia-ngx-dlss.so.310.9.16", "libnvidia-ngx-dlssd.so.310.9.16"]
     ngx_files = {
         "LICENSE.txt": "d4216e39ebef5f9b50a6712ebb37beeb5379862a67733a9999c651f21592aaf0",
         "include/nvsdk_ngx_defs.h": "ea23f33497cd274860d1c25a97644fce807dcb0037c594547203343103fad03e",
@@ -661,7 +661,8 @@ if env["use_ngx"]:
         "include/nvsdk_ngx_params_dlssd.h": "d41e3ba8f1d72583b55273092c99bf426dc4a0d46de827229e25d5b1325a370e",
         "include/nvsdk_ngx_vk.h": "2d364ce7132881eb669e9498fd570d74cba563b1fbebc82c235f8e1ad2dd8b6d",
         "lib/Linux_x86_64/libnvsdk_ngx.a": "d3c50bb0d9624fc35e502a8e929b8fc1e2b505017ebdb84c0d5b627e11a235df",
-        "lib/Linux_x86_64/rel/" + ngx_dlssd_library: "a5d59de18841f15779039dda567a15dd723ba737915f489271fdb5f109fbfb96",
+        "lib/Linux_x86_64/rel/libnvidia-ngx-dlss.so.310.9.16": "30982c937afed85c96b8d313323de9a650a2eec6de1bb0f714b21750f4ce98f6",
+        "lib/Linux_x86_64/rel/libnvidia-ngx-dlssd.so.310.9.16": "a5d59de18841f15779039dda567a15dd723ba737915f489271fdb5f109fbfb96",
     }
 
     # Cleaning and help never download.
@@ -688,10 +689,11 @@ if env["use_ngx"]:
         # NGX loads the DLSS libraries at runtime from the executable's folder.
         import shutil
 
-        # Their licence goes with them; the Linux export copies both next to the game.
+        # Their licence goes with them; the Linux export copies them all next to the game.
         os.makedirs("bin", exist_ok=True)
-        if not os.path.isfile(os.path.join("bin", ngx_dlssd_library)):
-            shutil.copy2(os.path.join(ngx_dir, "lib/Linux_x86_64/rel", ngx_dlssd_library), "bin")
+        for ngx_library in ngx_libraries:
+            if not os.path.isfile(os.path.join("bin", ngx_library)):
+                shutil.copy2(os.path.join(ngx_dir, "lib/Linux_x86_64/rel", ngx_library), "bin")
         if not os.path.isfile(os.path.join("bin", "NVIDIA_RTX_SDK_LICENSE.txt")):
             shutil.copy2(os.path.join(ngx_dir, "LICENSE.txt"), os.path.join("bin", "NVIDIA_RTX_SDK_LICENSE.txt"))
 

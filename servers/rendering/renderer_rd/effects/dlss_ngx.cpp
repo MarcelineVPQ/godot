@@ -28,10 +28,10 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-// DLSS Ray Reconstruction through the NVIDIA NGX SDK, for Linux builds where Streamline is not
-// available (see drivers/ngx). It mirrors the Streamline path in dlss.cpp: same motion vector
-// decode, same inputs and settings, but calls NGX directly. Only Ray Reconstruction is offered;
-// plain DLSS Super Resolution is not.
+// DLSS through the NVIDIA NGX SDK, for Linux builds where Streamline is not available (see
+// drivers/ngx). It mirrors the Streamline path in dlss.cpp: same motion vector decode, same inputs
+// and settings, but calls NGX directly. Super Resolution upscales rasterized frames; Ray
+// Reconstruction denoises and upscales the path tracer's.
 
 #include "dlss.h"
 
@@ -47,16 +47,23 @@ using namespace RendererRD;
 namespace RendererRD {
 class DLSSContextNGX : public DLSSContext {
 public:
-	NGXContext::Quality quality = NGXContext::QUALITY_OFF;
+	// Quality mode of each feature for this viewport's sizes, QUALITY_OFF when it has none.
+	NGXContext::Quality quality[NGXContext::FEATURE_COUNT] = { NGXContext::QUALITY_OFF, NGXContext::QUALITY_OFF };
 	void *feature = nullptr; // Created on first use, inside the render graph.
+	NGXContext::Feature feature_kind = NGXContext::FEATURE_SUPER_RESOLUTION; // What the feature was created as.
 	bool feature_alpha_upscaling = false; // The alpha upscaling the feature was created with.
 
 	virtual ~DLSSContextNGX() {
 		// Frames still in flight may use the feature, so NGX releases it once they are done.
-		NGXContext::get().dlssd_release(feature, RD::get_singleton()->get_frames_drawn() + RD::get_singleton()->get_frame_delay() + 1);
+		NGXContext::get().feature_release(feature, RD::get_singleton()->get_frames_drawn() + RD::get_singleton()->get_frame_delay() + 1);
 	}
 };
 } // namespace RendererRD
+
+// The feature upscale() with p_params uses.
+static NGXContext::Feature ngx_feature(const DLSSContext::Parameters &p_params) {
+	return p_params.dlss_rr ? NGXContext::FEATURE_RAY_RECONSTRUCTION : NGXContext::FEATURE_SUPER_RESOLUTION;
+}
 
 // Same layout as sl_convert_matrix in dlss.cpp, which Streamline passes on to NGX.
 static void ngx_convert_matrix(const Projection &p_mtx, float *r_matrix) {
@@ -99,10 +106,12 @@ DLSSEffect::~DLSSEffect() {
 
 DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_size) {
 	DLSSContextNGX *context = memnew(RendererRD::DLSSContextNGX);
-	if (NGXContext::get().is_dlssd_available()) {
-		context->quality = NGXContext::get().dlssd_find_quality(p_target_size.width, p_target_size.height, p_internal_size.width, p_internal_size.height);
-		if (context->quality == NGXContext::QUALITY_OFF) {
-			ERR_PRINT("Couldn't find an appropriate DLSS Ray Reconstruction mode.");
+	for (int i = 0; i < NGXContext::FEATURE_COUNT; i++) {
+		if (NGXContext::get().is_available((NGXContext::Feature)i)) {
+			context->quality[i] = NGXContext::get().find_quality((NGXContext::Feature)i, p_target_size.width, p_target_size.height, p_internal_size.width, p_internal_size.height);
+			if (context->quality[i] == NGXContext::QUALITY_OFF) {
+				ERR_PRINT(i == NGXContext::FEATURE_RAY_RECONSTRUCTION ? "Couldn't find an appropriate DLSS Ray Reconstruction mode." : "Couldn't find an appropriate DLSS mode.");
+			}
 		}
 	}
 	return context;
@@ -111,12 +120,7 @@ DLSSContext *DLSSEffect::create_context(Size2i p_internal_size, Size2i p_target_
 void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {
 	DLSSContextNGX *context = (DLSSContextNGX *)p_params.context;
 
-	if (!p_params.dlss_rr) {
-		if (NGXContext::get().is_dlssd_available()) {
-			WARN_PRINT_ONCE("On Linux, DLSS works only as Ray Reconstruction for the path tracer. Set the Environment's path tracing denoiser to DLSS Ray Reconstruction to use it.");
-		}
-		return;
-	}
+	const NGXContext::Feature feature = ngx_feature(p_params);
 
 	// Delay enablement
 	if (context->delay > 0) {
@@ -124,7 +128,7 @@ void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {
 		return;
 	}
 
-	if (!NGXContext::get().is_dlssd_available() || context->quality == NGXContext::QUALITY_OFF) {
+	if (!NGXContext::get().is_available(feature) || context->quality[feature] == NGXContext::QUALITY_OFF) {
 		return;
 	}
 
@@ -176,10 +180,12 @@ void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {
 	res[num_resources++].rid = p_params.color;
 	res[num_resources++].rid = p_params.depth;
 	res[num_resources++].rid = p_params.velocity;
-	res[num_resources++].rid = p_params.dlss_rr_diffuse_albedo;
-	res[num_resources++].rid = p_params.dlss_rr_specular_albedo;
-	res[num_resources++].rid = p_params.dlss_rr_normal_roughness;
-	res[num_resources++].rid = p_params.dlss_rr_specular_motion_vectors;
+	if (feature == NGXContext::FEATURE_RAY_RECONSTRUCTION) {
+		res[num_resources++].rid = p_params.dlss_rr_diffuse_albedo;
+		res[num_resources++].rid = p_params.dlss_rr_specular_albedo;
+		res[num_resources++].rid = p_params.dlss_rr_normal_roughness;
+		res[num_resources++].rid = p_params.dlss_rr_specular_motion_vectors;
+	}
 	for (int i = 0; i < num_resources; i++) {
 		ERR_FAIL_COND(res[i].rid.is_null());
 		res[i].usage = RD::CALLBACK_RESOURCE_USAGE_TEXTURE_SAMPLE;
@@ -192,57 +198,80 @@ void DLSSEffect::upscale(const DLSSContext::Parameters &p_params) {
 void DLSSEffect::_upscale_internal(RDD::CommandBufferID cmdid, const DLSSContext::Parameters &p_params) {
 	DLSSContextNGX *context = (DLSSContextNGX *)p_params.context;
 	void *native_command_buffer = RD::get_singleton()->get_device_driver()->command_buffer_get_native_handle(cmdid);
+	const NGXContext::Feature feature = ngx_feature(p_params);
+
+	const NGXContext::Resource color = ngx_resource(p_params.color, false);
+	const NGXContext::Resource output = ngx_resource(p_params.output, true);
+
+	if (context->feature != nullptr && (context->feature_kind != feature || context->feature_alpha_upscaling != p_params.dlss_rr_alpha_upscaling)) {
+		// The feature and alpha upscaling are fixed at creation, so the feature is made again.
+		NGXContext::get().feature_release(context->feature, RD::get_singleton()->get_frames_drawn() + RD::get_singleton()->get_frame_delay() + 1);
+		context->feature = nullptr;
+	}
+	if (context->feature == nullptr) {
+		NGXContext::CreateInfo create_info;
+		create_info.render_width = color.width;
+		create_info.render_height = color.height;
+		create_info.target_width = output.width;
+		create_info.target_height = output.height;
+		create_info.quality = context->quality[feature];
+		create_info.depth_inverted = p_params.reverse_depth;
+		create_info.alpha_upscaling = p_params.dlss_rr_alpha_upscaling;
+		create_info.preset = p_params.preset;
+		if (create_info.preset == '?') {
+			// Shared with the Streamline path, which reads the same project settings.
+			const String preset = GLOBAL_GET(feature == NGXContext::FEATURE_RAY_RECONSTRUCTION ? "rendering/streamline/dlss_ray_reconstruction_preset" : "rendering/streamline/dlss_preset");
+			if (preset.length() == 1) {
+				create_info.preset = (char)preset[0];
+			}
+		}
+		if (feature == NGXContext::FEATURE_RAY_RECONSTRUCTION) {
+			context->feature = NGXContext::get().dlssd_create(native_command_buffer, create_info);
+		} else {
+			context->feature = NGXContext::get().dlss_create(native_command_buffer, create_info);
+		}
+		if (context->feature == nullptr) {
+			context->quality[feature] = NGXContext::QUALITY_OFF; // Don't retry every frame; the error was printed once.
+			return;
+		}
+		context->feature_kind = feature;
+		context->feature_alpha_upscaling = create_info.alpha_upscaling;
+	}
+
+	// Motion vectors are in UV units (as for Streamline's mvecScale of 1 and FSR2); NGX wants pixels.
+	if (feature == NGXContext::FEATURE_SUPER_RESOLUTION) {
+		NGXContext::DLSSEvaluateInfo info;
+		info.color = color;
+		info.output = output;
+		info.depth = ngx_resource(p_params.depth, false);
+		info.motion_vectors = ngx_resource(p_params.velocity, false);
+		info.mv_scale_x = (float)color.width;
+		info.mv_scale_y = (float)color.height;
+		info.jitter_x = p_params.jitter.x;
+		info.jitter_y = p_params.jitter.y;
+		info.frame_time_ms = p_params.delta_time * 1000.0f;
+		info.reset = p_params.reset_accumulation;
+		NGXContext::get().dlss_evaluate(native_command_buffer, context->feature, info);
+		return;
+	}
 
 	NGXContext::DLSSDEvaluateInfo info;
-	info.color = ngx_resource(p_params.color, false);
-	info.output = ngx_resource(p_params.output, true);
+	info.color = color;
+	info.output = output;
 	info.depth = ngx_resource(p_params.depth, false);
 	info.motion_vectors = ngx_resource(p_params.velocity, false);
 	info.diffuse_albedo = ngx_resource(p_params.dlss_rr_diffuse_albedo, false);
 	info.specular_albedo = ngx_resource(p_params.dlss_rr_specular_albedo, false);
 	info.normal_roughness = ngx_resource(p_params.dlss_rr_normal_roughness, false);
 	info.specular_motion_vectors = ngx_resource(p_params.dlss_rr_specular_motion_vectors, false);
-
-	if (context->feature != nullptr && context->feature_alpha_upscaling != p_params.dlss_rr_alpha_upscaling) {
-		// Alpha upscaling is a creation flag, so the feature is made again.
-		NGXContext::get().dlssd_release(context->feature, RD::get_singleton()->get_frames_drawn() + RD::get_singleton()->get_frame_delay() + 1);
-		context->feature = nullptr;
-	}
-	if (context->feature == nullptr) {
-		NGXContext::DLSSDCreateInfo create_info;
-		create_info.render_width = info.color.width;
-		create_info.render_height = info.color.height;
-		create_info.target_width = info.output.width;
-		create_info.target_height = info.output.height;
-		create_info.quality = context->quality;
-		create_info.depth_inverted = p_params.reverse_depth;
-		create_info.alpha_upscaling = p_params.dlss_rr_alpha_upscaling;
-		create_info.preset = p_params.preset;
-		if (create_info.preset == '?') {
-			// Shared with the Streamline path, which reads the same project setting.
-			const String preset = GLOBAL_GET("rendering/streamline/dlss_ray_reconstruction_preset");
-			if (preset.length() == 1) {
-				create_info.preset = (char)preset[0];
-			}
-		}
-		context->feature = NGXContext::get().dlssd_create(native_command_buffer, create_info);
-		if (context->feature == nullptr) {
-			context->quality = NGXContext::QUALITY_OFF; // Don't retry every frame; the error was printed once.
-			return;
-		}
-		context->feature_alpha_upscaling = create_info.alpha_upscaling;
-	}
-
-	// Motion vectors are in UV units (as for Streamline's mvecScale of 1 and FSR2); NGX wants pixels.
-	info.mv_scale_x = (float)info.color.width;
-	info.mv_scale_y = (float)info.color.height;
+	info.mv_scale_x = (float)color.width;
+	info.mv_scale_y = (float)color.height;
 	info.jitter_x = p_params.jitter.x;
 	info.jitter_y = p_params.jitter.y;
 	info.frame_time_ms = p_params.delta_time * 1000.0f;
 	info.reset = p_params.reset_accumulation;
 	ngx_convert_matrix(Projection(p_params.cam_transform.affine_inverse()), info.world_to_view);
 	ngx_convert_matrix(p_params.cam_projection, info.view_to_clip);
-
 	NGXContext::get().dlssd_evaluate(native_command_buffer, context->feature, info);
 }
 
@@ -254,7 +283,8 @@ void RendererRD::DLSSEffect::_upscale_internal_graph_callback(RenderingDeviceDri
 bool DLSSEffect::is_ready(const DLSSContext::Parameters &p_params) {
 	const DLSSContextNGX *context = (const DLSSContextNGX *)p_params.context;
 	// The same conditions upscale() writes the output under.
-	return p_params.dlss_rr && NGXContext::get().is_dlssd_available() && context->quality != NGXContext::QUALITY_OFF && context->delay == 0;
+	const NGXContext::Feature feature = ngx_feature(p_params);
+	return NGXContext::get().is_available(feature) && context->quality[feature] != NGXContext::QUALITY_OFF && context->delay == 0;
 }
 
 #endif // defined(NGX_ENABLED) && !defined(STREAMLINE_ENABLED)

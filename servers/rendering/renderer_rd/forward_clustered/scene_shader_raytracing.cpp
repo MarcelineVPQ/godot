@@ -710,8 +710,8 @@ RSE::PathtracingDenoiser SceneShaderRaytracing::get_effective_denoiser(RID p_env
 		return RSE::PT_DENOISER_NONE;
 	}
 #ifdef NGX_ENABLED
-	if (env_storage->environment_get_pathtracing_denoiser(p_environment) == RSE::PT_DENOISER_DLSS_RAY_RECONSTRUCTION && !NGXContext::get().is_dlssd_available()) {
-		WARN_PRINT_ONCE("The path tracer runs without a denoiser because DLSS Ray Reconstruction is not available: " + NGXContext::get().get_unavailable_reason());
+	if (env_storage->environment_get_pathtracing_denoiser(p_environment) == RSE::PT_DENOISER_DLSS_RAY_RECONSTRUCTION && !NGXContext::get().is_available(NGXContext::FEATURE_RAY_RECONSTRUCTION)) {
+		WARN_PRINT_ONCE("The path tracer runs without a denoiser because DLSS Ray Reconstruction is not available: " + NGXContext::get().get_unavailable_reason(NGXContext::FEATURE_RAY_RECONSTRUCTION));
 		return RSE::PT_DENOISER_NONE;
 	}
 #endif

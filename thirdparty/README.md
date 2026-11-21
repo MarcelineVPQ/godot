@@ -926,6 +926,7 @@ git), checks each against its SHA-256 in `SConstruct`, and links them; see
 - `include/nvsdk_ngx_params_dlssd.h`
 - `include/nvsdk_ngx_vk.h`
 - `lib/Linux_x86_64/libnvsdk_ngx.a`
+- `lib/Linux_x86_64/rel/libnvidia-ngx-dlss.so.310.9.16`
 - `lib/Linux_x86_64/rel/libnvidia-ngx-dlssd.so.310.9.16`
 
 

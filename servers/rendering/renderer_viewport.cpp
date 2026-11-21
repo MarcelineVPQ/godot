@@ -291,8 +291,8 @@ void RendererViewport::_configure_3d_render_buffers(Viewport *p_viewport) {
 			}
 #elif defined(NGX_ENABLED)
 			if (scaling_3d_mode == RSE::VIEWPORT_SCALING_3D_MODE_DLSS) {
-				if (NGXContext::get().dlssd_clamp_render_size(target_width, target_height, render_width, render_height)) {
-					WARN_PRINT_ONCE(vformat("DLSS Ray Reconstruction does not support the requested 3D resolution scale. Clamping the internal resolution to %dx%d.", render_width, render_height));
+				if (NGXContext::get().clamp_render_size(target_width, target_height, render_width, render_height)) {
+					WARN_PRINT_ONCE(vformat("DLSS does not support the requested 3D resolution scale. Clamping the internal resolution to %dx%d.", render_width, render_height));
 					scaling_3d_scale = (float)render_width / (float)target_width;
 				}
 			}
@@ -1083,8 +1083,8 @@ void RendererViewport::viewport_set_scaling_3d_mode(RID p_viewport, RSE::Viewpor
 	}
 	if (p_mode == RSE::VIEWPORT_SCALING_3D_MODE_DLSS) {
 #if defined(NGX_ENABLED) && !defined(STREAMLINE_ENABLED)
-		if (!NGXContext::get().is_dlssd_available()) {
-			ERR_PRINT_ONCE_ED("DLSS Ray Reconstruction is not available: " + NGXContext::get().get_unavailable_reason());
+		if (!NGXContext::get().is_available(NGXContext::FEATURE_SUPER_RESOLUTION) && !NGXContext::get().is_available(NGXContext::FEATURE_RAY_RECONSTRUCTION)) {
+			ERR_PRINT_ONCE_ED("DLSS is not available: " + NGXContext::get().get_unavailable_reason(NGXContext::FEATURE_SUPER_RESOLUTION));
 		}
 #elif !defined(STREAMLINE_ENABLED)
 		ERR_PRINT_ONCE_ED("DLSS is not available because Streamline support was not compiled into the engine.");

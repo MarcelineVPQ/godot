@@ -93,10 +93,19 @@ NGXContext &NGXContext::get() {
 	return context;
 }
 
-static NVSDK_NGX_FeatureDiscoveryInfo ngx_discovery_info(const String &p_application_data_path) {
+NGXContext::NGXContext() {
+	_set_unavailable("NVIDIA NGX was not initialized (Vulkan on an NVIDIA GPU is required).");
+}
+
+static const NVSDK_NGX_Feature ngx_features[NGXContext::FEATURE_COUNT] = {
+	NVSDK_NGX_Feature_SuperSampling,
+	NVSDK_NGX_Feature_RayReconstruction,
+};
+
+static NVSDK_NGX_FeatureDiscoveryInfo ngx_discovery_info(NGXContext::Feature p_feature, const String &p_application_data_path) {
 	NVSDK_NGX_FeatureDiscoveryInfo info = {};
 	info.SDKVersion = NVSDK_NGX_Version_API;
-	info.FeatureID = NVSDK_NGX_Feature_RayReconstruction;
+	info.FeatureID = ngx_features[p_feature];
 	info.Identifier.IdentifierType = NVSDK_NGX_Application_Identifier_Type_Project_Id;
 	info.Identifier.v.ProjectDesc.ProjectId = NGX_PROJECT_ID;
 	info.Identifier.v.ProjectDesc.EngineType = NVSDK_NGX_ENGINE_TYPE_CUSTOM;
@@ -107,14 +116,19 @@ static NVSDK_NGX_FeatureDiscoveryInfo ngx_discovery_info(const String &p_applica
 
 void NGXContext::get_vulkan_instance_extensions(LocalVector<CharString> &r_extensions) {
 	const String data_path = OS::get_singleton()->get_user_data_dir();
-	NVSDK_NGX_FeatureDiscoveryInfo info = ngx_discovery_info(data_path);
-
-	uint32_t count = 0;
-	VkExtensionProperties *properties = nullptr;
-	if (NVSDK_NGX_SUCCEED(NVSDK_NGX_VULKAN_GetFeatureInstanceExtensionRequirements(&info, &count, &properties))) {
-		for (uint32_t i = 0; i < count; i++) {
-			r_extensions.push_back(CharString(properties[i].extensionName));
+	bool queried = false;
+	for (int i = 0; i < FEATURE_COUNT; i++) {
+		NVSDK_NGX_FeatureDiscoveryInfo info = ngx_discovery_info((Feature)i, data_path);
+		uint32_t count = 0;
+		VkExtensionProperties *properties = nullptr;
+		if (NVSDK_NGX_SUCCEED(NVSDK_NGX_VULKAN_GetFeatureInstanceExtensionRequirements(&info, &count, &properties))) {
+			for (uint32_t j = 0; j < count; j++) {
+				r_extensions.push_back(CharString(properties[j].extensionName));
+			}
+			queried = true;
 		}
+	}
+	if (queried) {
 		return;
 	}
 
@@ -132,14 +146,19 @@ void NGXContext::get_vulkan_instance_extensions(LocalVector<CharString> &r_exten
 
 void NGXContext::get_vulkan_device_extensions(void *p_instance, void *p_physical_device, LocalVector<CharString> &r_extensions) {
 	const String data_path = OS::get_singleton()->get_user_data_dir();
-	NVSDK_NGX_FeatureDiscoveryInfo info = ngx_discovery_info(data_path);
-
-	uint32_t count = 0;
-	VkExtensionProperties *properties = nullptr;
-	if (NVSDK_NGX_SUCCEED(NVSDK_NGX_VULKAN_GetFeatureDeviceExtensionRequirements((VkInstance)p_instance, (VkPhysicalDevice)p_physical_device, &info, &count, &properties))) {
-		for (uint32_t i = 0; i < count; i++) {
-			r_extensions.push_back(CharString(properties[i].extensionName));
+	bool queried = false;
+	for (int i = 0; i < FEATURE_COUNT; i++) {
+		NVSDK_NGX_FeatureDiscoveryInfo info = ngx_discovery_info((Feature)i, data_path);
+		uint32_t count = 0;
+		VkExtensionProperties *properties = nullptr;
+		if (NVSDK_NGX_SUCCEED(NVSDK_NGX_VULKAN_GetFeatureDeviceExtensionRequirements((VkInstance)p_instance, (VkPhysicalDevice)p_physical_device, &info, &count, &properties))) {
+			for (uint32_t j = 0; j < count; j++) {
+				r_extensions.push_back(CharString(properties[j].extensionName));
+			}
+			queried = true;
 		}
+	}
+	if (queried) {
 		return;
 	}
 
@@ -154,13 +173,57 @@ void NGXContext::get_vulkan_device_extensions(void *p_instance, void *p_physical
 	}
 }
 
+void NGXContext::_set_unavailable(const String &p_reason) {
+	for (int i = 0; i < FEATURE_COUNT; i++) {
+		available[i] = false;
+		unavailable_reasons[i] = p_reason;
+	}
+}
+
+// Whether the library of p_feature loaded and runs on this GPU and driver.
+void NGXContext::_check_feature(Feature p_feature) {
+	NVSDK_NGX_Parameter *capabilities = (NVSDK_NGX_Parameter *)capability_parameters;
+	static const char *const needs_updated_driver_keys[FEATURE_COUNT] = { NVSDK_NGX_Parameter_SuperSampling_NeedsUpdatedDriver, NVSDK_NGX_Parameter_SuperSamplingDenoising_NeedsUpdatedDriver };
+	static const char *const min_driver_major_keys[FEATURE_COUNT] = { NVSDK_NGX_Parameter_SuperSampling_MinDriverVersionMajor, NVSDK_NGX_Parameter_SuperSamplingDenoising_MinDriverVersionMajor };
+	static const char *const min_driver_minor_keys[FEATURE_COUNT] = { NVSDK_NGX_Parameter_SuperSampling_MinDriverVersionMinor, NVSDK_NGX_Parameter_SuperSamplingDenoising_MinDriverVersionMinor };
+	static const char *const available_keys[FEATURE_COUNT] = { NVSDK_NGX_Parameter_SuperSampling_Available, NVSDK_NGX_Parameter_SuperSamplingDenoising_Available };
+	static const char *const init_result_keys[FEATURE_COUNT] = { NVSDK_NGX_Parameter_SuperSampling_FeatureInitResult, NVSDK_NGX_Parameter_SuperSamplingDenoising_FeatureInitResult };
+	static const char *const names[FEATURE_COUNT] = { "DLSS Super Resolution", "DLSS Ray Reconstruction" };
+	static const char *const libraries[FEATURE_COUNT] = { "libnvidia-ngx-dlss.so", "libnvidia-ngx-dlssd.so" };
+
+	int needs_updated_driver = 0;
+	if (NVSDK_NGX_SUCCEED(NVSDK_NGX_Parameter_GetI(capabilities, needs_updated_driver_keys[p_feature], &needs_updated_driver)) && needs_updated_driver) {
+		unsigned int min_driver_major = 0;
+		unsigned int min_driver_minor = 0;
+		NVSDK_NGX_Parameter_GetUI(capabilities, min_driver_major_keys[p_feature], &min_driver_major);
+		NVSDK_NGX_Parameter_GetUI(capabilities, min_driver_minor_keys[p_feature], &min_driver_minor);
+		unavailable_reasons[p_feature] = vformat("%s needs NVIDIA driver %d.%d or newer. Please update the NVIDIA driver.", names[p_feature], min_driver_major, min_driver_minor);
+		print_verbose("NGX: " + unavailable_reasons[p_feature]);
+		return;
+	}
+
+	int is_available = 0;
+	NVSDK_NGX_Result result = NVSDK_NGX_Parameter_GetI(capabilities, available_keys[p_feature], &is_available);
+	if (NVSDK_NGX_FAILED(result) || !is_available) {
+		int init_result = 0;
+		NVSDK_NGX_Parameter_GetI(capabilities, init_result_keys[p_feature], &init_result);
+		unavailable_reasons[p_feature] = vformat("%s is not available on this GPU, or %s was not found next to the Godot executable (NGX result %s).", names[p_feature], libraries[p_feature], ngx_result_string((uint32_t)init_result));
+		print_verbose("NGX: " + unavailable_reasons[p_feature]);
+		return;
+	}
+
+	available[p_feature] = true;
+	unavailable_reasons[p_feature] = String();
+	print_verbose(vformat("NGX: %s is available.", names[p_feature]));
+}
+
 void NGXContext::initialize_vulkan(void *p_instance, void *p_physical_device, void *p_device, void *p_get_instance_proc_addr, void *p_get_device_proc_addr) {
-	if (device != nullptr || dlssd_available) {
+	if (device != nullptr) {
 		// Only the first (main) rendering device uses NGX; local devices created later share nothing with it.
 		return;
 	}
 
-	// NGX writes its logs here, and looks for libnvidia-ngx-dlssd.so next to the executable.
+	// NGX writes its logs here, and looks for the DLSS libraries next to the executable.
 	application_data_path = OS::get_singleton()->get_user_data_dir();
 	library_path = OS::get_singleton()->get_executable_path().get_base_dir();
 	const wchar_t *library_paths[] = { (const wchar_t *)library_path.get_data() };
@@ -177,8 +240,8 @@ void NGXContext::initialize_vulkan(void *p_instance, void *p_physical_device, vo
 			(const wchar_t *)application_data_path.get_data(), (VkInstance)p_instance, (VkPhysicalDevice)p_physical_device, (VkDevice)p_device,
 			(PFN_vkGetInstanceProcAddr)p_get_instance_proc_addr, (PFN_vkGetDeviceProcAddr)p_get_device_proc_addr, &common_info);
 	if (NVSDK_NGX_FAILED(result)) {
-		unavailable_reason = "NVIDIA NGX could not start on this GPU or driver (error " + ngx_result_string(result) + "). DLSS needs an NVIDIA RTX GPU and a recent NVIDIA driver.";
-		print_verbose("NGX: " + unavailable_reason);
+		_set_unavailable("NVIDIA NGX could not start on this GPU or driver (error " + ngx_result_string(result) + "). DLSS needs an NVIDIA RTX GPU and a recent NVIDIA driver.");
+		print_verbose("NGX: " + unavailable_reasons[0]);
 		return;
 	}
 	device = p_device;
@@ -186,45 +249,24 @@ void NGXContext::initialize_vulkan(void *p_instance, void *p_physical_device, vo
 	NVSDK_NGX_Parameter *capabilities = nullptr;
 	result = NVSDK_NGX_VULKAN_GetCapabilityParameters(&capabilities);
 	if (NVSDK_NGX_FAILED(result) || capabilities == nullptr) {
-		unavailable_reason = "The NVIDIA driver is too old for DLSS Ray Reconstruction (error " + ngx_result_string(result) + "). Please update the NVIDIA driver.";
-		print_verbose("NGX: " + unavailable_reason);
+		_set_unavailable("The NVIDIA driver is too old for DLSS (error " + ngx_result_string(result) + "). Please update the NVIDIA driver.");
+		print_verbose("NGX: " + unavailable_reasons[0]);
 		return;
 	}
 	capability_parameters = capabilities;
 
-	int needs_updated_driver = 0;
-	unsigned int min_driver_major = 0;
-	unsigned int min_driver_minor = 0;
-	if (NVSDK_NGX_SUCCEED(NVSDK_NGX_Parameter_GetI(capabilities, NVSDK_NGX_Parameter_SuperSamplingDenoising_NeedsUpdatedDriver, &needs_updated_driver)) && needs_updated_driver) {
-		NVSDK_NGX_Parameter_GetUI(capabilities, NVSDK_NGX_Parameter_SuperSamplingDenoising_MinDriverVersionMajor, &min_driver_major);
-		NVSDK_NGX_Parameter_GetUI(capabilities, NVSDK_NGX_Parameter_SuperSamplingDenoising_MinDriverVersionMinor, &min_driver_minor);
-		unavailable_reason = vformat("DLSS Ray Reconstruction needs NVIDIA driver %d.%d or newer. Please update the NVIDIA driver.", min_driver_major, min_driver_minor);
-		print_verbose("NGX: " + unavailable_reason);
-		return;
-	}
-
-	int available = 0;
-	result = NVSDK_NGX_Parameter_GetI(capabilities, NVSDK_NGX_Parameter_SuperSamplingDenoising_Available, &available);
-	if (NVSDK_NGX_FAILED(result) || !available) {
-		int init_result = 0;
-		NVSDK_NGX_Parameter_GetI(capabilities, NVSDK_NGX_Parameter_SuperSamplingDenoising_FeatureInitResult, &init_result);
-		unavailable_reason = "DLSS Ray Reconstruction is not available on this GPU, or libnvidia-ngx-dlssd.so was not found next to the Godot executable (NGX result " + ngx_result_string((uint32_t)init_result) + ").";
-		print_verbose("NGX: " + unavailable_reason);
-		return;
-	}
-
 	NVSDK_NGX_Parameter *parameters = nullptr;
 	result = NVSDK_NGX_VULKAN_AllocateParameters(&parameters);
 	if (NVSDK_NGX_FAILED(result) || parameters == nullptr) {
-		unavailable_reason = "NVIDIA NGX could not allocate its parameters (error " + ngx_result_string(result) + ").";
-		print_verbose("NGX: " + unavailable_reason);
+		_set_unavailable("NVIDIA NGX could not allocate its parameters (error " + ngx_result_string(result) + ").");
+		print_verbose("NGX: " + unavailable_reasons[0]);
 		return;
 	}
 	feature_parameters = parameters;
 
-	dlssd_available = true;
-	unavailable_reason = String();
-	print_verbose("NGX: DLSS Ray Reconstruction is available.");
+	for (int i = 0; i < FEATURE_COUNT; i++) {
+		_check_feature((Feature)i);
+	}
 }
 
 void NGXContext::shutdown_vulkan(void *p_device) {
@@ -243,21 +285,22 @@ void NGXContext::shutdown_vulkan(void *p_device) {
 	}
 	NVSDK_NGX_VULKAN_Shutdown1((VkDevice)device);
 	device = nullptr;
-	dlssd_available = false;
-	unavailable_reason = "NVIDIA NGX was shut down.";
+	_set_unavailable("NVIDIA NGX was shut down.");
 }
 
-bool NGXContext::dlssd_get_optimal_settings(uint32_t p_target_width, uint32_t p_target_height, Quality p_quality, OptimalSettings &r_settings) {
+bool NGXContext::get_optimal_settings(Feature p_feature, uint32_t p_target_width, uint32_t p_target_height, Quality p_quality, OptimalSettings &r_settings) {
+	ERR_FAIL_INDEX_V(p_feature, FEATURE_COUNT, false);
 	ERR_FAIL_INDEX_V(p_quality, QUALITY_COUNT, false);
-	if (!dlssd_available) {
+	if (!available[p_feature]) {
 		return false;
 	}
 	NVSDK_NGX_Parameter *parameters = (NVSDK_NGX_Parameter *)capability_parameters;
 
-	// The library publishes a callback in its capability parameters that fills in the render sizes it accepts for a
+	// Each library publishes a callback in the capability parameters that fills in the render sizes it accepts for a
 	// target size and quality mode.
+	static const char *const callback_keys[FEATURE_COUNT] = { NVSDK_NGX_Parameter_DLSSOptimalSettingsCallback, NVSDK_NGX_Parameter_DLSSDOptimalSettingsCallback };
 	void *callback = nullptr;
-	NVSDK_NGX_Parameter_GetVoidPointer(parameters, NVSDK_NGX_Parameter_DLSSDOptimalSettingsCallback, &callback);
+	NVSDK_NGX_Parameter_GetVoidPointer(parameters, callback_keys[p_feature], &callback);
 	if (callback == nullptr) {
 		return false;
 	}
@@ -298,12 +341,12 @@ bool NGXContext::dlssd_get_optimal_settings(uint32_t p_target_width, uint32_t p_
 	return r_settings.optimal_width > 0 && r_settings.optimal_height > 0;
 }
 
-NGXContext::Quality NGXContext::dlssd_find_quality(uint32_t p_target_width, uint32_t p_target_height, uint32_t p_render_width, uint32_t p_render_height) {
+NGXContext::Quality NGXContext::find_quality(Feature p_feature, uint32_t p_target_width, uint32_t p_target_height, uint32_t p_render_width, uint32_t p_render_height) {
 	Quality closest = QUALITY_OFF;
 	float closest_distance_squared = 0.0f;
 	for (int i = 0; i < QUALITY_COUNT; i++) {
 		OptimalSettings settings;
-		if (!dlssd_get_optimal_settings(p_target_width, p_target_height, (Quality)i, settings)) {
+		if (!get_optimal_settings(p_feature, p_target_width, p_target_height, (Quality)i, settings)) {
 			continue;
 		}
 		if (p_render_width < settings.min_width || p_render_width > settings.max_width ||
@@ -321,20 +364,18 @@ NGXContext::Quality NGXContext::dlssd_find_quality(uint32_t p_target_width, uint
 	return closest;
 }
 
-bool NGXContext::dlssd_clamp_render_size(int p_target_width, int p_target_height, int &r_render_width, int &r_render_height) {
-	if (!dlssd_available) {
-		return false;
+bool NGXContext::clamp_render_size(int p_target_width, int p_target_height, int &r_render_width, int &r_render_height) {
+	for (int f = 0; f < FEATURE_COUNT; f++) {
+		if (find_quality((Feature)f, p_target_width, p_target_height, r_render_width, r_render_height) != QUALITY_OFF) {
+			return false; // A mode already accepts this size; leave it alone.
+		}
 	}
 
+	const Feature feature = available[FEATURE_RAY_RECONSTRUCTION] ? FEATURE_RAY_RECONSTRUCTION : FEATURE_SUPER_RESOLUTION;
 	OptimalSettings settings[QUALITY_COUNT];
 	bool valid[QUALITY_COUNT] = {};
 	for (int i = 0; i < QUALITY_COUNT; i++) {
-		valid[i] = dlssd_get_optimal_settings(p_target_width, p_target_height, (Quality)i, settings[i]);
-		if (valid[i] &&
-				r_render_width >= (int)settings[i].min_width && r_render_width <= (int)settings[i].max_width &&
-				r_render_height >= (int)settings[i].min_height && r_render_height <= (int)settings[i].max_height) {
-			return false; // A mode already accepts this size; leave it alone.
-		}
+		valid[i] = get_optimal_settings(feature, p_target_width, p_target_height, (Quality)i, settings[i]);
 	}
 
 	// Round down to the nearest mode that does not render more pixels than were asked for, or to
@@ -363,8 +404,50 @@ bool NGXContext::dlssd_clamp_render_size(int p_target_width, int p_target_height
 	return true;
 }
 
-void *NGXContext::dlssd_create(void *p_command_buffer, const DLSSDCreateInfo &p_info) {
-	ERR_FAIL_COND_V(!dlssd_available, nullptr);
+void *NGXContext::dlss_create(void *p_command_buffer, const CreateInfo &p_info) {
+	ERR_FAIL_COND_V(!available[FEATURE_SUPER_RESOLUTION], nullptr);
+	ERR_FAIL_INDEX_V(p_info.quality, QUALITY_COUNT, nullptr);
+	NVSDK_NGX_Parameter *parameters = (NVSDK_NGX_Parameter *)feature_parameters;
+
+	// '?' is NVIDIA's default. The SDK marks presets G, H, I, N and O "do not use": they fall back to the default.
+	NVSDK_NGX_DLSS_Hint_Render_Preset preset = NVSDK_NGX_DLSS_Hint_Render_Preset_Default;
+	if (p_info.preset == 'F' || (p_info.preset >= 'J' && p_info.preset <= 'M')) {
+		preset = (NVSDK_NGX_DLSS_Hint_Render_Preset)(p_info.preset - 'A' + 1);
+	} else if (p_info.preset != '?') {
+		WARN_PRINT_ONCE(vformat("DLSS preset %s isn't offered on Linux, which has presets F, J, K, L and M. NVIDIA's default preset is used instead.", String::chr(p_info.preset)));
+	}
+	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_DLAA, preset);
+	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Quality, preset);
+	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Balanced, preset);
+	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_Performance, preset);
+	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_DLSS_Hint_Render_Preset_UltraPerformance, preset);
+
+	// HDR colour, hardware depth (reversed), unjittered motion vectors at render resolution, as for Ray
+	// Reconstruction. Exposure is left to DLSS: Godot's luminance buffer holds the average luminance, not an exposure.
+	int flags = NVSDK_NGX_DLSS_Feature_Flags_IsHDR | NVSDK_NGX_DLSS_Feature_Flags_MVLowRes | NVSDK_NGX_DLSS_Feature_Flags_AutoExposure;
+	if (p_info.depth_inverted) {
+		flags |= NVSDK_NGX_DLSS_Feature_Flags_DepthInverted;
+	}
+	if (p_info.alpha_upscaling) {
+		flags |= NVSDK_NGX_DLSS_Feature_Flags_AlphaUpscaling;
+	}
+
+	NVSDK_NGX_DLSS_Create_Params create_params = {};
+	create_params.Feature.InWidth = p_info.render_width;
+	create_params.Feature.InHeight = p_info.render_height;
+	create_params.Feature.InTargetWidth = p_info.target_width;
+	create_params.Feature.InTargetHeight = p_info.target_height;
+	create_params.Feature.InPerfQualityValue = ngx_quality_values[p_info.quality];
+	create_params.InFeatureCreateFlags = flags;
+
+	NVSDK_NGX_Handle *handle = nullptr;
+	NVSDK_NGX_Result result = NGX_VULKAN_CREATE_DLSS_EXT1((VkDevice)device, (VkCommandBuffer)p_command_buffer, 1, 1, &handle, parameters, &create_params);
+	ERR_FAIL_COND_V_MSG(NVSDK_NGX_FAILED(result), nullptr, "Failed to create the DLSS Super Resolution feature (NGX error " + ngx_result_string(result) + ").");
+	return handle;
+}
+
+void *NGXContext::dlssd_create(void *p_command_buffer, const CreateInfo &p_info) {
+	ERR_FAIL_COND_V(!available[FEATURE_RAY_RECONSTRUCTION], nullptr);
 	ERR_FAIL_INDEX_V(p_info.quality, QUALITY_COUNT, nullptr);
 	NVSDK_NGX_Parameter *parameters = (NVSDK_NGX_Parameter *)feature_parameters;
 
@@ -373,7 +456,7 @@ void *NGXContext::dlssd_create(void *p_command_buffer, const DLSSDCreateInfo &p_
 	if (p_info.preset >= 'D' && p_info.preset <= 'F') {
 		preset = (NVSDK_NGX_RayReconstruction_Hint_Render_Preset)(NVSDK_NGX_RayReconstruction_Hint_Render_Preset_D + (p_info.preset - 'D'));
 	} else if (p_info.preset != '?') {
-		WARN_PRINT_ONCE(vformat("DLSS Ray Reconstruction preset %c isn't offered on Linux, which has presets D, E and F. NVIDIA's default preset is used instead.", p_info.preset));
+		WARN_PRINT_ONCE(vformat("DLSS Ray Reconstruction preset %s isn't offered on Linux, which has presets D, E and F. NVIDIA's default preset is used instead.", String::chr(p_info.preset)));
 	}
 	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_DLAA, preset);
 	NVSDK_NGX_Parameter_SetUI(parameters, NVSDK_NGX_Parameter_RayReconstruction_Hint_Render_Preset_Quality, preset);
@@ -408,8 +491,35 @@ void *NGXContext::dlssd_create(void *p_command_buffer, const DLSSDCreateInfo &p_
 	return handle;
 }
 
+bool NGXContext::dlss_evaluate(void *p_command_buffer, void *p_feature, const DLSSEvaluateInfo &p_info) {
+	ERR_FAIL_COND_V(!available[FEATURE_SUPER_RESOLUTION] || p_feature == nullptr, false);
+
+	NVSDK_NGX_Resource_VK color = ngx_resource(p_info.color);
+	NVSDK_NGX_Resource_VK output = ngx_resource(p_info.output);
+	NVSDK_NGX_Resource_VK depth = ngx_resource(p_info.depth);
+	NVSDK_NGX_Resource_VK motion_vectors = ngx_resource(p_info.motion_vectors);
+
+	NVSDK_NGX_VK_DLSS_Eval_Params eval_params = {};
+	eval_params.Feature.pInColor = &color;
+	eval_params.Feature.pInOutput = &output;
+	eval_params.pInDepth = &depth;
+	eval_params.pInMotionVectors = &motion_vectors;
+	eval_params.InJitterOffsetX = p_info.jitter_x;
+	eval_params.InJitterOffsetY = p_info.jitter_y;
+	eval_params.InMVScaleX = p_info.mv_scale_x;
+	eval_params.InMVScaleY = p_info.mv_scale_y;
+	eval_params.InRenderSubrectDimensions.Width = p_info.color.width;
+	eval_params.InRenderSubrectDimensions.Height = p_info.color.height;
+	eval_params.InReset = p_info.reset ? 1 : 0;
+	eval_params.InFrameTimeDeltaInMsec = p_info.frame_time_ms;
+
+	NVSDK_NGX_Result result = NGX_VULKAN_EVALUATE_DLSS_EXT((VkCommandBuffer)p_command_buffer, (NVSDK_NGX_Handle *)p_feature, (NVSDK_NGX_Parameter *)feature_parameters, &eval_params);
+	ERR_FAIL_COND_V_MSG(NVSDK_NGX_FAILED(result), false, "Failed to evaluate DLSS Super Resolution (NGX error " + ngx_result_string(result) + ").");
+	return true;
+}
+
 bool NGXContext::dlssd_evaluate(void *p_command_buffer, void *p_feature, const DLSSDEvaluateInfo &p_info) {
-	ERR_FAIL_COND_V(!dlssd_available || p_feature == nullptr, false);
+	ERR_FAIL_COND_V(!available[FEATURE_RAY_RECONSTRUCTION] || p_feature == nullptr, false);
 
 	NVSDK_NGX_Resource_VK color = ngx_resource(p_info.color);
 	NVSDK_NGX_Resource_VK output = ngx_resource(p_info.output);
@@ -451,7 +561,7 @@ bool NGXContext::dlssd_evaluate(void *p_command_buffer, void *p_feature, const D
 	return true;
 }
 
-void NGXContext::dlssd_release(void *p_feature, uint64_t p_release_frame) {
+void NGXContext::feature_release(void *p_feature, uint64_t p_release_frame) {
 	if (p_feature == nullptr || device == nullptr) {
 		return; // Shutdown already released it.
 	}
@@ -461,7 +571,7 @@ void NGXContext::dlssd_release(void *p_feature, uint64_t p_release_frame) {
 	pending_releases.push_back(release);
 }
 
-void NGXContext::dlssd_release_pending(void *p_device, uint64_t p_current_frame) {
+void NGXContext::feature_release_pending(void *p_device, uint64_t p_current_frame) {
 	if (p_device != device) {
 		return; // Another rendering device, with its own frame count.
 	}
