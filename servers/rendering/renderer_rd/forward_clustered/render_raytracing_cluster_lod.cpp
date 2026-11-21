@@ -105,10 +105,12 @@ void RTClusterLodSelector::_scale_range(const Basis &p_basis, float &r_min, floa
 // How much the projected errors of p_instance's cut may have grown or shrunk since it was picked, as a factor, or 0
 // while it holds within HYSTERESIS. FLT_MAX when the instance has no cut yet.
 //
-// Under a uniform scale, the projected errors only depend on the camera position in mesh space and on the projection,
-// so camera and instance moves count the same. Every cluster is in the surface bounds, so none is nearer than they
-// are: a camera move by `moved` changes the distance to any cluster by at most that, out of at least `distance`. A
-// non-uniform scale changing its proportions counts by how much they changed.
+// Distances are in the selection shader's metric (projected_error() in cluster_lod_select.glsl): the gap of a sphere
+// at mesh-space distance d with radius r is d * min_scale - r * max_scale. Every cluster's sphere is inside the surface
+// bounds, so no gap is smaller than the bounds' own, `distance`; a camera move by m in mesh space changes a gap by at
+// most m * min_scale, `moved`. So the errors change by at most a factor of 1 + moved / distance, under any scale. An
+// orthographic projection doesn't depend on distances at all. A non-uniform scale changing its proportions counts by
+// how much they changed.
 float RTClusterLodSelector::_staleness(const View &p_view, const View::Instance &p_instance, const RTClusterLodSurface &p_surface, const Transform3D &p_transform) const {
 	if (!p_instance.selected) {
 		return FLT_MAX;
@@ -123,8 +125,8 @@ float RTClusterLodSelector::_staleness(const View &p_view, const View::Instance 
 
 	const bool moved_instance = p_transform != p_instance.transform;
 	const Vector3 camera = (moved_instance ? p_transform.affine_inverse() : p_instance.inverse_transform).xform(p_view.camera);
-	const float distance = MAX(camera.distance_to(p_surface.center) - p_surface.radius, p_view.z_near / max_scale);
-	const float moved = camera.distance_to(p_instance.camera);
+	const float distance = MAX(camera.distance_to(p_surface.center) * min_scale - p_surface.radius * max_scale, p_view.z_near);
+	const float moved = p_view.orthographic ? 0.0f : camera.distance_to(p_instance.camera) * min_scale;
 	const float projection_change = p_view.pixel_scale > p_instance.pixel_scale ? p_view.pixel_scale / p_instance.pixel_scale : p_instance.pixel_scale / p_view.pixel_scale;
 	const float anisotropy = max_scale / min_scale;
 	const float anisotropy_change = anisotropy > p_instance.anisotropy ? anisotropy / p_instance.anisotropy : p_instance.anisotropy / anisotropy;
