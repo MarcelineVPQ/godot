@@ -258,9 +258,10 @@ void rt_medium_scatter(inout PathState r_ps, vec3 p_pos, vec3 p_dir, float p_t, 
 // Where the medium hides most of what's behind, the primary ray's motion and DLSS-RR guides become those of the fog at
 // the point where its transmittance falls to one half, facing the camera, and r_depth is that point's depth for DLSS
 // (rt_write_guide_depth()). Only DLSS gets that depth, so the motion follows the fog only with
-// RT_FLAG_GUIDE_DEPTH_ENABLED; otherwise TAA and FSR2 reproject with the surfaces' depth and motion. Unlike the scatter events, that point doesn't change with the samples, so the guides don't
-// flicker. p_dir is unit, p_t_end in meters. Returns true if it wrote. The depth buffer keeps the surfaces' depth, so
-// raster passes drawn after the trace (transparent objects, editor gizmos) aren't hidden behind the fog.
+// RT_FLAG_GUIDE_DEPTH_ENABLED; otherwise TAA and FSR2 reproject with the surfaces' depth and motion. Unlike the scatter
+// events, that point doesn't change with the samples, so the guides don't flicker. p_dir is unit, p_t_end in meters.
+// Returns true if it wrote. The depth buffer keeps the surfaces' depth, so raster passes drawn after the trace
+// (transparent objects, editor gizmos) aren't hidden behind the fog.
 bool rt_medium_write_primary_guides(vec3 p_origin, vec3 p_dir, float p_t_end, out float r_depth) {
 	r_depth = 0.0;
 	float t_half = rt_medium_depth_distance(p_origin, p_dir, p_t_end, 0.693147);
