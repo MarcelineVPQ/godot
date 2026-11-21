@@ -1579,6 +1579,7 @@ void RendererSceneRenderRD::render_scene(const Ref<RenderSceneBuffers> &p_render
 			render_data.rt_instances = p_rt_cull->instances;
 			render_data.rt_lights = p_rt_cull->lights;
 			render_data.rt_decals = p_rt_cull->decals;
+			render_data.rt_fog_volumes = p_rt_cull->fog_volumes;
 		}
 		render_data.viewport = p_viewport;
 

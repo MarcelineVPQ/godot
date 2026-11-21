@@ -862,7 +862,9 @@ void RenderForwardClusteredPT::_update_pt_volumetric_fog(RenderDataRD *p_render_
 
 	Ref<RenderSceneBuffersRD> rb = p_render_data->render_buffers;
 
-	RendererRD::Fog::get_singleton()->volumetric_fog_world_grid_update(rb.ptr(), p_render_data->scene_data->cam_transform, time, *p_render_data->fog_volumes);
+	// The grid gets every FogVolume in its bounds, on screen or not; the froxels only those in the view.
+	const PagedArray<RID> &world_grid_fog_volumes = p_render_data->rt_fog_volumes ? *p_render_data->rt_fog_volumes : *p_render_data->fog_volumes;
+	RendererRD::Fog::get_singleton()->volumetric_fog_world_grid_update(rb.ptr(), p_render_data->scene_data->cam_transform, time, world_grid_fog_volumes);
 	// With light transport through the world grid, FogVolumes are traced there only. The froxels keep the
 	// Environment's global fog, which the grid doesn't hold, for camera segments.
 	const bool world_grid_transport = GLOBAL_GET_CACHED(bool, "rendering/pathtracing/volumetric_fog_world_grid_transport") && RendererRD::Fog::get_active_world_grid(rb.ptr(), p_render_data->environment).is_valid();

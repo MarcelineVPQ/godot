@@ -318,6 +318,7 @@ public:
 		const PagedArray<RenderGeometryInstance *> *instances = nullptr;
 		const PagedArray<RID> *lights = nullptr;
 		const PagedArray<RID> *decals = nullptr;
+		const PagedArray<RID> *fog_volumes = nullptr; // In the path tracer's fog world grid.
 	};
 
 	struct CameraData {

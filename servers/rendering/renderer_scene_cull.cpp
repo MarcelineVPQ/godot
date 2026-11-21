@@ -3334,6 +3334,12 @@ void RendererSceneCull::_scene_cull(CullData &cull_data, InstanceCullResult &cul
 			// HIDDEN_CLOSE_RANGE (fully faded out), matching the point where raster
 			// switches over. In-frustum children are subject to the same rule.
 			if (cull_data.cull->rt_enabled && (idata.layer_mask & ((1 << 20) - 1))) {
+				// FogVolumes go to the path tracer's world grid around the camera, which rays leaving the view sample
+				// too, so the grid's bounds decide, not the frustum.
+				if ((idata.flags & InstanceData::FLAG_BASE_TYPE_MASK) == RSE::INSTANCE_FOG_VOLUME &&
+						(in_frustum || (LAYER_CHECK && VIS_CHECK)) && cull_data.scenario->instance_aabbs[i].in_aabb(cull_data.cull->rt_fog_aabb)) {
+					cull_result.rt_fog_volume_instances.push_back(RID::from_uint64(idata.instance_data_rid));
+				}
 				// For off-frustum instances, also run LAYER_CHECK and VIS_CHECK to match raster gating.
 				bool rt_in_range = in_frustum || (LAYER_CHECK && cull_data.scenario->instance_aabbs[i].in_aabb(cull_data.cull->rt_aabb) && VIS_CHECK);
 				if (rt_in_range) {
@@ -3485,6 +3491,11 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 		float z_far = p_camera_data->main_projection.get_z_far();
 		Vector3 cam_origin = p_camera_data->main_transform.origin;
 		cull.rt_aabb = AABB(cam_origin - Vector3(z_far, z_far, z_far), Vector3(z_far, z_far, z_far) * 2.0);
+		// The grid is centered on the camera and snapped to whole voxels, so two voxels of margin hold it.
+		const Vector3 fog_grid_size = GLOBAL_GET_CACHED(Vector3, "rendering/pathtracing/volumetric_fog_world_grid_size");
+		const float fog_voxel_size = GLOBAL_GET_CACHED(double, "rendering/pathtracing/volumetric_fog_world_grid_voxel_size");
+		const Vector3 fog_half_extent = fog_grid_size * 0.5 + Vector3(2, 2, 2) * fog_voxel_size;
+		cull.rt_fog_aabb = AABB(cam_origin - fog_half_extent, fog_half_extent * 2.0);
 	}
 
 	Vector<RID> directional_lights;
@@ -3842,6 +3853,7 @@ void RendererSceneCull::_render_scene(const RendererSceneRender::CameraData *p_c
 	rt_cull.instances = &scene_cull_result.rt_geometry_instances;
 	rt_cull.lights = &scene_cull_result.rt_light_instances;
 	rt_cull.decals = &scene_cull_result.rt_decal_instances;
+	rt_cull.fog_volumes = &scene_cull_result.rt_fog_volume_instances;
 
 	RENDER_TIMESTAMP("Render 3D Scene");
 	scene_render->render_scene(p_render_buffers, p_camera_data, prev_camera_data, scene_cull_result.geometry_instances, scene_cull_result.light_instances, scene_cull_result.reflections, scene_cull_result.voxel_gi_instances, scene_cull_result.decals, scene_cull_result.lightmaps, scene_cull_result.fog_volumes, p_environment, camera_attributes, p_compositor, p_shadow_atlas, occluders_tex, p_reflection_probe.is_valid() ? RID() : scenario->reflection_atlas, p_reflection_probe, p_reflection_probe_pass, p_screen_mesh_lod_threshold, render_shadow_data, max_shadows_used, render_sdfgi_data, cull.sdfgi.region_count, p_window_output_max_value, &sdfgi_update_data, r_render_info, &rt_cull, p_viewport);

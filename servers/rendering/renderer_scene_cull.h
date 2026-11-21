@@ -911,6 +911,7 @@ public:
 		PagedArray<RenderGeometryInstance *> rt_geometry_instances;
 		PagedArray<RID> rt_light_instances;
 		PagedArray<RID> rt_decal_instances;
+		PagedArray<RID> rt_fog_volume_instances;
 
 		struct DirectionalShadow {
 			PagedArray<RenderGeometryInstance *> cascade_geometry_instances[RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES];
@@ -932,6 +933,7 @@ public:
 			rt_geometry_instances.clear();
 			rt_light_instances.clear();
 			rt_decal_instances.clear();
+			rt_fog_volume_instances.clear();
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].clear();
@@ -960,6 +962,7 @@ public:
 			rt_geometry_instances.reset();
 			rt_light_instances.reset();
 			rt_decal_instances.reset();
+			rt_fog_volume_instances.reset();
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].reset();
@@ -988,6 +991,7 @@ public:
 			rt_geometry_instances.merge_unordered(p_cull_result.rt_geometry_instances);
 			rt_light_instances.merge_unordered(p_cull_result.rt_light_instances);
 			rt_decal_instances.merge_unordered(p_cull_result.rt_decal_instances);
+			rt_fog_volume_instances.merge_unordered(p_cull_result.rt_fog_volume_instances);
 
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
@@ -1017,6 +1021,7 @@ public:
 			rt_geometry_instances.set_page_pool(p_geometry_instance_pool);
 			rt_light_instances.set_page_pool(p_rid_pool);
 			rt_decal_instances.set_page_pool(p_rid_pool);
+			rt_fog_volume_instances.set_page_pool(p_rid_pool);
 			for (int i = 0; i < RendererSceneRender::MAX_DIRECTIONAL_LIGHTS; i++) {
 				for (int j = 0; j < RendererSceneRender::MAX_DIRECTIONAL_LIGHT_CASCADES; j++) {
 					directional_shadows[i].cascade_geometry_instances[j].set_page_pool(p_geometry_instance_pool);
@@ -1164,6 +1169,8 @@ public:
 		// Raytracing: wider AABB cull volume for TLAS and light gathering.
 		bool rt_enabled = false;
 		AABB rt_aabb;
+		// Bounds of the path tracer's FogVolume world grid, see Fog::volumetric_fog_world_grid_update().
+		AABB rt_fog_aabb;
 	} cull;
 
 	struct VisibilityCullData {

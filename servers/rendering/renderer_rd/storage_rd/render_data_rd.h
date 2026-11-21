@@ -105,4 +105,5 @@ public:
 	const PagedArray<RenderGeometryInstance *> *rt_instances = nullptr;
 	const PagedArray<RID> *rt_lights = nullptr;
 	const PagedArray<RID> *rt_decals = nullptr;
+	const PagedArray<RID> *rt_fog_volumes = nullptr; // In the bounds of the FogVolume world grid.
 };
